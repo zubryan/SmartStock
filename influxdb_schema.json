@@ -1,0 +1,159 @@
+[
+    {
+        "name": "mktdata.@ticker.@exchangeCD",
+        "columns": [
+            "ticker.exchange",
+            "dataDate",
+            "dataTime",
+            "lastPrice",
+            "volume",
+            "ammount",
+            "price_change",
+            "price_change_percentage"
+        ],
+        "comments": {
+            "ticker.exchange": "as is",
+            "dataDate": "Date of this snapshot from mktdata (rawData)",
+            "dataTime": "Time of this snapshot from mktdata",
+            "lastPrice": "Last trading price",
+            "volume": "Trading accumulated quantity at the time",
+            "ammount": "Trading accumulated value at the time",
+            "price_change": "lastPrice - prevClose",
+            "price_change_percentage": "(lastPrice - prevClose)/prevClose - 100%"
+        }
+    },
+    {
+        "name": "mktdata_daily.@ticker.@exchangeCD",
+        "columns": [
+            "ticker.exchange",
+            "dataDate",
+            "openPrice",
+            "closePrice",
+            "highestPrice",
+            "lowestPrice",
+            "price_change",
+            "price_change_percentage",
+            "volume",
+            "ammount"
+        ],
+        "comments": {
+            "ticker.exchange": "as is",
+            "dataDate": "Date of this snapshot",
+            "openPrice": "Opening price",
+            "closePrice": "Close price",
+            "highestPrice": "Intraday highest value",
+            "lowestPrice": "Intraday lowest value",
+            "price_change": "Close Price - Previous Close Price",
+            "price_change_percentage": "(Close Price - Previous Close Price)/Previous Close Price - 100%",
+            "volume": "Intraday trading volume",
+            "ammount": "Intraday trading value"
+        }
+    },
+    {
+        "name": "mktdata_daily_corrected.@ticker.@exchangeCD",
+        "columns": [
+            "ticker.exchange",
+            "dataDate",
+            "openPrice",
+            "closePrice",
+            "highestPrice",
+            "lowestPrice",
+            "price_change",
+            "price_change_percentage",
+            "volume",
+            "ammount"
+        ],
+        "comments": {
+            "ticker.exchange": "as is",
+            "dataDate": "Date of this snapshot forward right restored ",
+            "openPrice": "Opening price",
+            "closePrice": "Close price",
+            "highestPrice": "Intraday highest value",
+            "lowestPrice": "Intraday lowest value",
+            "price_change": "Close Price - Previous Close Price",
+            "price_change_percentage": "(Close Price - Previous Close Price)/Previous Close Price - 100%",
+            "volume": "Intraday trading volume",
+            "ammount": "Intraday trading value"
+        }
+    },
+    {
+        "name": "indicators.macd.@ticker.@exchangeCD",
+        "columns": [
+            "ticker.exchange",
+            "dataDate",
+            "dataTime",
+            "DIF",
+            "DEA",
+            "MACD"
+        ],
+        "comments": {
+            "ticker.exchange": "as is",
+            "dataDate": "Date of this snapshot from mktdata",
+            "dataTime": "Time of this snapshot from mktdata",
+            "DIF": "EMA12-EMA26",
+            "DEA": "EMA(DIF,9)",
+            "MACD": "(DIF-DEA)*2"
+        }
+    },
+    {
+        "name": "metrics",
+        "columns": [
+            "ticker.exchange",
+            "dataDate",
+            "dataTime",
+            "X1-1",
+            "X1-2",
+            "X2",
+            "Y1",
+            "Y2",
+            "X3",
+            "X4"
+        ],
+        "comments": {
+            "ticker.exchange": "as is",
+            "dataDate": "Date of this snapshot",
+            "dataTime": "Time of this snapshot",
+            "X1.1": "当日成交量/5日成交均量（前5日）",
+            "X1.2": "当日成交量/10日成交均量（前10日）",
+            "X2": "涨跌幅",
+            "Y1": "5日均价>=10日均价>=20日均价",
+            "Y2": "5日均价<=10日均价<=20日均价",
+            "X3": "|macd|",
+            "X4": "市值"
+        }
+    },
+    {
+        "name": "refdata",
+        "columns": [
+            "ticker.exchange",
+            "tradableQty",
+            "currency",
+            "criterias",
+            "shortName",
+            "isActive"
+        ],
+        "comments": {
+            "ticker.exchange": "as is",
+            "tradableQty": "tradable stock qty",
+            "currency": "calculation currency(计价货币)",
+            "criterias": "criterias needed for alerts，eg. [c1,c2,c4]",
+            "shortName": "instrument name",
+            "isActive": "whether to calculate"
+        }
+    },
+    {
+        "name": "alerts",
+        "columns": [
+            "ticker.exchange",
+            "dataDate",
+            "dataTime",
+            "criteriaHit"
+        ],
+        "comments": {
+            "ticker.exchange": "as is",
+            "dataDate": "Date of this snapshot",
+            "dataTime": "Time of this snapshot",
+            "criteriaHit": "The name of hit criteria"
+        }
+    }
+]
