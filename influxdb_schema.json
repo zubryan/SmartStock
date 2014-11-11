@@ -128,13 +128,17 @@
             "ticker.exchange",
             "tradableQty",
             "currency",
-            "criterias"
+            "criterias",
+            "shortName",
+            "isActive"
         ],
         "comments": {
             "ticker.exchange": "as is",
             "tradableQty": "tradable stock qty",
             "currency": "calculation currency(计价货币)",
-            "criterias": "criterias needed for alerts，eg. [c1,c2,c4]"
+            "criterias": "criterias needed for alerts，eg. [c1,c2,c4]",
+            "shortName": "instrument name",
+            "isActive": "whether to calculate"
         }
     },
     {
