@@ -48,7 +48,14 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println(stock)
+
+		var dataSh []Stock
+		for _, v := range stock.Data {
+			if v.ExchangeCD == "XSHG" {
+				dataSh = append(dataSh, v)
+			}
+		}
+		fmt.Println(len(dataSh))
 	}
 
 	c, err := client.NewClient(&client.ClientConfig{
