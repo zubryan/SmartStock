@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"flag"
-	"fmt"
+	//"fmt"
 	"github.com/influxdb/influxdb/client"
 	"github.com/larspensjo/config"
 	"io/ioutil"
@@ -44,11 +44,12 @@ var DBCONF = make(map[string]string)
 
 var CONSTMOD = 2
 
-func importData(auth string, url string, ch chan int) {
+func importData(securityId string, ch chan int) {
 	var stock Stockslice
+	var url = APICONF["url"] + "/" + APICONF["market"] + "/" + APICONF["version"] + "/getTickRTSnapshot.json?securityID=" + securityId + "&field=dataDate,dataTime,shortNM,currencyCD,prevClosePrice,openPrice,volume,value,deal,highPrice,lowPrice,lastPrice"
 	req, _ := http.NewRequest("GET", url, nil)
 
-	req.Header.Add("Authorization", "Bearer "+auth)
+	req.Header.Add("Authorization", "Bearer "+APICONF["auth"])
 
 	httpClient := &http.Client{}
 
@@ -143,10 +144,8 @@ func main() {
 		m++
 		securityId = stockSecId[i][0:len(stockSecId[i])-1] + "," + securityId
 		if m%CONSTMOD == 0 {
-			var url = APICONF["url"] + "/" + APICONF["market"] + "/" + APICONF["version"] + "/getTickRTSnapshot.json?securityID=" + securityId + "&field=dataDate,dataTime,shortNM,currencyCD,prevClosePrice,openPrice,volume,value,deal,highPrice,lowPrice,lastPrice"
-			fmt.Println(url)
 			chs[n] = make(chan int)
-			go importData(APICONF["auth"], url, chs[n])
+			go importData(securityId, chs[n])
 			securityId = ""
 			n++
 		}
@@ -157,10 +156,8 @@ func main() {
 		for p := 0; p < modR; p++ {
 			securityId = stockSecId[stockLen-modR+p][0:len(stockSecId[stockLen-modR+p])-1] + "," + securityId
 		}
-		var url = APICONF["url"] + "/" + APICONF["market"] + "/" + APICONF["version"] + "/getTickRTSnapshot.json?securityID=" + securityId + "&field=dataDate,dataTime,shortNM,currencyCD,prevClosePrice,openPrice,volume,value,deal,highPrice,lowPrice,lastPrice"
-		fmt.Println(url)
 		chs[n] = make(chan int)
-		go importData(APICONF["auth"], url, chs[n])
+		go importData(securityId, chs[n])
 	}
 
 	for _, ch := range chs {
