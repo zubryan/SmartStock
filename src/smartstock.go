@@ -60,10 +60,10 @@ func importData(securityId string, ch chan int) {
 		json.Unmarshal(body, &stock)
 
 		c, _ := client.NewClient(&client.ClientConfig{
-			Host:     "192.168.129.136:8086",
-			Username: "root",
-			Password: "root",
-			Database: "smartstock",
+			Host:     DBCONF["host"],
+			Username: DBCONF["username"],
+			Password: DBCONF["password"],
+			Database: DBCONF["database"],
 		})
 
 		for j := 0; j < len(stock.Data); j++ {
