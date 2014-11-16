@@ -23,6 +23,7 @@ type Stockslice struct {
 }
 
 var APICONF = make(map[string]string)
+var STOCKFILE = make(map[string]string)
 
 func main() {
 	cfg, err := config.ReadDefault(*configFile)
@@ -30,17 +31,12 @@ func main() {
 		panic(err)
 	}
 
-	if cfg.HasSection("API") {
-		section, err := cfg.SectionOptions("API")
-		if err == nil {
-			for _, v := range section {
-				options, err := cfg.String("API", v)
-				if err == nil {
-					APICONF[v] = options
-				}
-			}
-		}
-	}
+	APICONF["url"], _ = cfg.String("API", "url")
+	APICONF["master"], _ = cfg.String("API", "master")
+	APICONF["version"], _ = cfg.String("API", "version")
+	APICONF["auth"], _ = cfg.String("API", "auth")
+
+	STOCKFILE["FILE"], _ = cfg.String("FILE", "stocklist")
 
 	var stock Stockslice
 	req, err := http.NewRequest("GET", APICONF["url"]+"/"+APICONF["master"]+"/"+APICONF["version"]+"/getSecID.json?ticker=ticker&field=secID", nil)
@@ -60,7 +56,7 @@ func main() {
 			panic(err)
 		}
 
-		fout, err := os.Create("../data/stocklist")
+		fout, err := os.Create(STOCKFILE["FILE"])
 		defer fout.Close()
 		if err != nil {
 			panic(err)

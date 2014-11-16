@@ -41,8 +41,8 @@ type Stockslice struct {
 
 var APICONF = make(map[string]string)
 var DBCONF = make(map[string]string)
-
-var CONSTMOD = 2
+var STOCKFILE = make(map[string]string)
+var GOGROUP = 100
 
 func importData(securityId string, ch chan int) {
 	var stock Stockslice
@@ -87,31 +87,19 @@ func main() {
 		panic(err)
 	}
 
-	if cfg.HasSection("API") {
-		section, err := cfg.SectionOptions("API")
-		if err == nil {
-			for _, v := range section {
-				options, err := cfg.String("API", v)
-				if err == nil {
-					APICONF[v] = options
-				}
-			}
-		}
-	}
+	APICONF["url"], _ = cfg.String("API", "url")
+	APICONF["market"], _ = cfg.String("API", "market")
+	APICONF["version"], _ = cfg.String("API", "version")
+	APICONF["auth"], _ = cfg.String("API", "auth")
 
-	if cfg.HasSection("DB") {
-		section, err := cfg.SectionOptions("DB")
-		if err == nil {
-			for _, v := range section {
-				options, err := cfg.String("DB", v)
-				if err == nil {
-					DBCONF[v] = options
-				}
-			}
-		}
-	}
+	DBCONF["host"], _ = cfg.String("DB", "host")
+	DBCONF["username"], _ = cfg.String("DB", "username")
+	DBCONF["password"], _ = cfg.String("DB", "password")
+	DBCONF["database"], _ = cfg.String("DB", "database")
 
-	fin, err := os.Open("../data/stocklist")
+	STOCKFILE["FILE"], _ = cfg.String("FILE", "stocklist")
+
+	fin, err := os.Open(STOCKFILE["FILE"])
 	defer fin.Close()
 	if err != nil {
 		panic(err)
@@ -125,25 +113,24 @@ func main() {
 		s, err = r.ReadString('\n')
 	}
 
-	var stockSecId []string = stockSecIds[:9]
-	stockLen := len(stockSecId)
+	stockLen := len(stockSecIds)
 
-	modR := int(math.Mod(float64(stockLen), float64(CONSTMOD)))
+	modR := int(math.Mod(float64(stockLen), float64(GOGROUP)))
 	var groupNum int
 	if modR > 0 {
-		groupNum = (stockLen / CONSTMOD) + 1
+		groupNum = (stockLen / GOGROUP) + 1
 	} else {
-		groupNum = (stockLen / CONSTMOD)
+		groupNum = (stockLen / GOGROUP)
 	}
 
 	var securityId string
 	m := 0
 	n := 0
 	chs := make([]chan int, groupNum)
-	for i := 0; i < len(stockSecId); i++ {
+	for i := 0; i < stockLen; i++ {
 		m++
-		securityId = stockSecId[i][0:len(stockSecId[i])-1] + "," + securityId
-		if m%CONSTMOD == 0 {
+		securityId = stockSecIds[i][0:len(stockSecIds[i])-1] + "," + securityId
+		if m%GOGROUP == 0 {
 			chs[n] = make(chan int)
 			go importData(securityId, chs[n])
 			securityId = ""
@@ -154,7 +141,7 @@ func main() {
 	securityId = ""
 	if modR > 0 {
 		for p := 0; p < modR; p++ {
-			securityId = stockSecId[stockLen-modR+p][0:len(stockSecId[stockLen-modR+p])-1] + "," + securityId
+			securityId = stockSecIds[stockLen-modR+p][0:len(stockSecIds[stockLen-modR+p])-1] + "," + securityId
 		}
 		chs[n] = make(chan int)
 		go importData(securityId, chs[n])
