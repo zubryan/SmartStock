@@ -42,7 +42,7 @@ type Stockslice struct {
 var APICONF = make(map[string]string)
 var DBCONF = make(map[string]string)
 var STOCKFILE = make(map[string]string)
-var GOGROUP = 100
+var GROUPMOD = 100
 
 func importData(securityId string, ch chan int) {
 	var stock Stockslice
@@ -68,11 +68,16 @@ func importData(securityId string, ch chan int) {
 
 		for j := 0; j < len(stock.Data); j++ {
 			name := "mktdata." + stock.Data[j].Ticker + "." + stock.Data[j].ExchangeCD
+			if stock.Data[j].LastPrice == 0 {
+				stock.Data[j].LastPrice = stock.Data[j].PrevClosePrice
+			}
+			priceChange := stock.Data[j].LastPrice - stock.Data[j].PrevClosePrice
+			priceChangePt := (stock.Data[j].LastPrice - stock.Data[j].PrevClosePrice) / stock.Data[j].PrevClosePrice * 100
 			series := &client.Series{
 				Name:    name,
-				Columns: []string{"ticker.exchange", "dataDate", "dataTime", "lastPrice", "volume"},
+				Columns: []string{"ticker.exchange", "dataDate", "dataTime", "lastPrice", "volume", "ammount", "price_change", "price_change_percentage"},
 				Points: [][]interface{}{
-					{stock.Data[j].Ticker + "." + stock.Data[j].ExchangeCD, stock.Data[j].DataDate, stock.Data[j].DataTime, stock.Data[j].LastPrice, stock.Data[j].Volume},
+					{stock.Data[j].Ticker + "." + stock.Data[j].ExchangeCD, stock.Data[j].DataDate, stock.Data[j].DataTime, stock.Data[j].LastPrice, stock.Data[j].Volume, stock.Data[j].Value, priceChange, priceChangePt},
 				},
 			}
 			c.WriteSeries([]*client.Series{series})
@@ -86,6 +91,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	GROUPMOD, _ = cfg.Int("GENERAL", "groupmod")
 
 	APICONF["url"], _ = cfg.String("API", "url")
 	APICONF["market"], _ = cfg.String("API", "market")
@@ -115,12 +122,12 @@ func main() {
 
 	stockLen := len(stockSecIds)
 
-	modR := int(math.Mod(float64(stockLen), float64(GOGROUP)))
+	modR := int(math.Mod(float64(stockLen), float64(GROUPMOD)))
 	var groupNum int
 	if modR > 0 {
-		groupNum = (stockLen / GOGROUP) + 1
+		groupNum = (stockLen / GROUPMOD) + 1
 	} else {
-		groupNum = (stockLen / GOGROUP)
+		groupNum = (stockLen / GROUPMOD)
 	}
 
 	var securityId string
@@ -130,7 +137,7 @@ func main() {
 	for i := 0; i < stockLen; i++ {
 		m++
 		securityId = stockSecIds[i][0:len(stockSecIds[i])-1] + "," + securityId
-		if m%GOGROUP == 0 {
+		if m%GROUPMOD == 0 {
 			chs[n] = make(chan int)
 			go importData(securityId, chs[n])
 			securityId = ""
