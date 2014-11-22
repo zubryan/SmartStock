@@ -2,13 +2,12 @@ package framework
 
 import (
 	"bufio"
-	"strings"
-	// "encoding/json"
 	"flag"
 	"fmt"
-	// "github.com/influxdb/influxdb/client"
 	"github.com/larspensjo/config"
+	"math"
 	"os"
+	"strings"
 )
 
 var (
@@ -36,6 +35,17 @@ type doGo func([]Stock, chan int)
 type Goproc struct {
 	DoGo doGo
 	Desc string
+}
+
+func ToInt(v float64) int64 {
+	// not support negative
+	return int64(math.Trunc(v*1e5 + 0.5))
+}
+func Div(v int64, w int64) int64 {
+	if w == 0 {
+		return 0
+	}
+	return v / w
 }
 
 func SetProcess(process Goproc) {

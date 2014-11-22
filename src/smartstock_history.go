@@ -5,10 +5,8 @@ import (
 	. "fmt"
 	"github.com/influxdb/influxdb/client"
 	"io/ioutil"
-	"math"
 	"net/http"
 	. "smartstock/framework"
-	// "strings"
 	"time"
 )
 
@@ -46,17 +44,6 @@ func init() {
 	// StockDatas = make([]Mktdata, STOCKCOUNT)
 	SetProcess(Goproc{process, "dosth"})
 	SetProcess(Goproc{process, "dosth"})
-}
-
-func ToInt(v float64) int64 {
-	// not support negative
-	return int64(math.Trunc(v*1e5 + 0.5))
-}
-func Div(v int64, w int64) int64 {
-	if w == 0 {
-		return 0
-	}
-	return v / w
 }
 
 func histdata(sec string) MktEqudslice {

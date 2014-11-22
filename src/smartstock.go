@@ -1,23 +1,19 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
-	"flag"
-	//"fmt"
+	. "fmt"
 	"github.com/influxdb/influxdb/client"
-	"github.com/larspensjo/config"
 	"io/ioutil"
-	"math"
 	"net/http"
-	"os"
+	. "smartstock/framework"
 )
 
-var (
-	configFile = flag.String("configfile", "config.ini", "General configuration file")
+const (
+	DECIMALS = 100000
 )
 
-type Stock struct {
+type TickRTSnapshot struct {
 	Timestamp      int64
 	Ticker         string
 	ExchangeCD     string
@@ -35,29 +31,41 @@ type Stock struct {
 	LastPrice      float64
 }
 
-type Stockslice struct {
-	Data []Stock
+type TickRTSnapshotSlice struct {
+	Data []TickRTSnapshot
 }
 
-var APICONF = make(map[string]string)
-var DBCONF = make(map[string]string)
-var STOCKFILE = make(map[string]string)
-var GROUPMOD = 100
+var TickRTSnapshotFields = [12]string{"dataDate", "dataTime", "shortNM", "currencyCD", "prevClosePrice", "openPrice", "volume", "value", "deal", "highPrice", "lowPrice", "lastPrice"}
 
-func importData(securityId string, ch chan int) {
-	var stock Stockslice
-	var url = APICONF["url"] + "/" + APICONF["market"] + "/" + APICONF["version"] + "/getTickRTSnapshot.json?securityID=" + securityId + "&field=dataDate,dataTime,shortNM,currencyCD,prevClosePrice,openPrice,volume,value,deal,highPrice,lowPrice,lastPrice"
+func init() {
+	Println(STOCKCOUNT)
+	SetProcess(Goproc{process, "doTickRTSnapshot"})
+}
+
+func process(mds []Stock, ch chan int) {
+	var tickRTSnapshotSlice TickRTSnapshotSlice
+	var (
+		securityIds string
+		fields      string
+	)
+
+	for _, id := range mds {
+		securityIds += id.Ticker_exchange + ","
+	}
+
+	for _, field := range TickRTSnapshotFields {
+		fields += field + ","
+	}
+
+	var url = APICONF["url"] + "/" + APICONF["market"] + "/" + APICONF["version"] + "/getTickRTSnapshot.json?securityID=" + securityIds + "&field=" + fields
 	req, _ := http.NewRequest("GET", url, nil)
-
 	req.Header.Add("Authorization", "Bearer "+APICONF["auth"])
-
 	httpClient := &http.Client{}
-
 	resp, _ := httpClient.Do(req)
 
 	if resp.StatusCode == 200 {
 		body, _ := ioutil.ReadAll(resp.Body)
-		json.Unmarshal(body, &stock)
+		json.Unmarshal(body, &tickRTSnapshotSlice)
 
 		c, _ := client.NewClient(&client.ClientConfig{
 			Host:     DBCONF["host"],
@@ -66,18 +74,30 @@ func importData(securityId string, ch chan int) {
 			Database: DBCONF["database"],
 		})
 
-		for j := 0; j < len(stock.Data); j++ {
-			name := "mktdata." + stock.Data[j].Ticker + "." + stock.Data[j].ExchangeCD
-			if stock.Data[j].LastPrice == 0 {
-				stock.Data[j].LastPrice = stock.Data[j].PrevClosePrice
+		for j := 0; j < len(tickRTSnapshotSlice.Data); j++ {
+			name := "mktdata." + tickRTSnapshotSlice.Data[j].Ticker + "." + tickRTSnapshotSlice.Data[j].ExchangeCD
+			var lastPrice int64
+			if tickRTSnapshotSlice.Data[j].LastPrice == 0 {
+				lastPrice = ToInt(tickRTSnapshotSlice.Data[j].PrevClosePrice)
+			} else {
+				lastPrice = ToInt(tickRTSnapshotSlice.Data[j].LastPrice)
 			}
-			priceChange := stock.Data[j].LastPrice - stock.Data[j].PrevClosePrice
-			priceChangePt := (stock.Data[j].LastPrice - stock.Data[j].PrevClosePrice) / stock.Data[j].PrevClosePrice * 100
+			priceChange := lastPrice - ToInt(tickRTSnapshotSlice.Data[j].PrevClosePrice)
+			priceChangePt := Div(priceChange, ToInt(tickRTSnapshotSlice.Data[j].PrevClosePrice)) * 100 * DECIMALS
+
 			series := &client.Series{
-				Name:    name,
-				Columns: []string{"ticker.exchange", "dataDate", "dataTime", "lastPrice", "volume", "ammount", "price_change", "price_change_percentage"},
+				Name: name,
+				Columns: []string{
+					"ticker.exchange",
+					"dataDate", "dataTime",
+					"lastPrice",
+					"volume",
+					"ammount",
+					"price_change",
+					"price_change_percentage",
+				},
 				Points: [][]interface{}{
-					{stock.Data[j].Ticker + "." + stock.Data[j].ExchangeCD, stock.Data[j].DataDate, stock.Data[j].DataTime, stock.Data[j].LastPrice, stock.Data[j].Volume, stock.Data[j].Value, priceChange, priceChangePt},
+					{tickRTSnapshotSlice.Data[j].Ticker + "." + tickRTSnapshotSlice.Data[j].ExchangeCD, tickRTSnapshotSlice.Data[j].DataDate, tickRTSnapshotSlice.Data[j].DataTime, lastPrice, tickRTSnapshotSlice.Data[j].Volume, tickRTSnapshotSlice.Data[j].Value, priceChange, priceChangePt},
 				},
 			}
 			c.WriteSeries([]*client.Series{series})
@@ -87,74 +107,5 @@ func importData(securityId string, ch chan int) {
 }
 
 func main() {
-	cfg, err := config.ReadDefault(*configFile)
-	if err != nil {
-		panic(err)
-	}
-
-	GROUPMOD, _ = cfg.Int("GENERAL", "groupmod")
-
-	APICONF["url"], _ = cfg.String("API", "url")
-	APICONF["market"], _ = cfg.String("API", "market")
-	APICONF["version"], _ = cfg.String("API", "version")
-	APICONF["auth"], _ = cfg.String("API", "auth")
-
-	DBCONF["host"], _ = cfg.String("DB", "host")
-	DBCONF["username"], _ = cfg.String("DB", "username")
-	DBCONF["password"], _ = cfg.String("DB", "password")
-	DBCONF["database"], _ = cfg.String("DB", "database")
-
-	STOCKFILE["FILE"], _ = cfg.String("FILE", "stocklist")
-
-	fin, err := os.Open(STOCKFILE["FILE"])
-	defer fin.Close()
-	if err != nil {
-		panic(err)
-	}
-
-	var stockSecIds []string
-	r := bufio.NewReader(fin)
-	s, err := r.ReadString('\n')
-	for err == nil {
-		stockSecIds = append(stockSecIds, s)
-		s, err = r.ReadString('\n')
-	}
-
-	stockLen := len(stockSecIds)
-
-	modR := int(math.Mod(float64(stockLen), float64(GROUPMOD)))
-	var groupNum int
-	if modR > 0 {
-		groupNum = (stockLen / GROUPMOD) + 1
-	} else {
-		groupNum = (stockLen / GROUPMOD)
-	}
-
-	var securityId string
-	m := 0
-	n := 0
-	chs := make([]chan int, groupNum)
-	for i := 0; i < stockLen; i++ {
-		m++
-		securityId = stockSecIds[i][0:len(stockSecIds[i])-1] + "," + securityId
-		if m%GROUPMOD == 0 {
-			chs[n] = make(chan int)
-			go importData(securityId, chs[n])
-			securityId = ""
-			n++
-		}
-	}
-
-	securityId = ""
-	if modR > 0 {
-		for p := 0; p < modR; p++ {
-			securityId = stockSecIds[stockLen-modR+p][0:len(stockSecIds[stockLen-modR+p])-1] + "," + securityId
-		}
-		chs[n] = make(chan int)
-		go importData(securityId, chs[n])
-	}
-
-	for _, ch := range chs {
-		<-ch
-	}
+	Main()
 }
