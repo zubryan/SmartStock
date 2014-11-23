@@ -89,7 +89,6 @@
         "comments": {
             "ticker.exchange": "as is",
             "dataDate": "Date of this snapshot from mktdata",
-            "dataTime": "Time of this snapshot from mktdata",
             "DIF": "EMA12-EMA26",
             "DEA": "EMA(DIF,9)",
             "MACD": "(DIF-DEA)*2"
