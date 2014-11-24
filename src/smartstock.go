@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	. "github.com/dimdin/decimal"
 	"github.com/influxdb/influxdb/client"
-	"io/ioutil"
-	"net/http"
+	"strings"
+
 	. "smartstock/framework"
+	"time"
 )
 
 type TickRTSnapshot struct {
@@ -28,45 +29,94 @@ type TickRTSnapshot struct {
 }
 
 type TickRTSnapshotSlice struct {
-	Data []TickRTSnapshot
+	RetCode int
+	RetMsg  string
+	Data    []TickRTSnapshot
 }
 
 var TickRTSnapshotFields = [12]string{"dataDate", "dataTime", "shortNM", "currencyCD", "prevClosePrice", "openPrice", "volume", "value", "deal", "highPrice", "lowPrice", "lastPrice"}
 
+const (
+	timetoSleep = time.Second
+)
+
 func init() {
-	SetProcess(Goproc{process, "Get 1 TickRTSnapshot"})
+	if !DEBUGMODE {
+		SetGoInf()
+	}
+	SetProcess(Goproc{process, "Get TickRTSnapshot"})
 }
 
 func process(mds []Stock, ch chan int) {
 	var tickRTSnapshotSlice TickRTSnapshotSlice
-	var (
-		securityIds string
-		fields      string
-	)
+	var securityIds string
 
-	for _, id := range mds {
-		securityIds += id.Ticker_exchange + ","
+	idxMap := make(map[string]int)
+	for i := range mds {
+		idxMap[mds[i].Ticker_exchange] = mds[i].Idx
+		securityIds += mds[i].Ticker_exchange + ","
 	}
 
-	for _, field := range TickRTSnapshotFields {
-		fields += field + ","
-	}
+	for {
+		retry := APIMAXRETRY
+		var body []byte
+		var err error
+		ok := false
+		for i := range mds {
+			StartProcess(mds[i].Idx)
+		}
+		for !ok && retry > 0 {
+			body, err = CallDataAPI(
+				"market",
+				"1.0.0",
+				"getTickRTSnapshot.json",
+				[]string{
+					"securityID=" + securityIds,
+					"field=" + strings.Join(TickRTSnapshotFields[:], ","),
+				})
+			if err != nil {
+				Logger.Print(string(body))
+				for i := range mds {
+					SetStockStatus(mds[i].Idx, STATUS_ERROR, "Standby")
+				}
+				time.Sleep(timetoSleep)
+				continue
+			}
+			json.Unmarshal(body, &tickRTSnapshotSlice)
 
-	var url = APICONF["url"] + "/" + APICONF["market"] + "/" + APICONF["version"] + "/getTickRTSnapshot.json?securityID=" + securityIds + "&field=" + fields
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Add("Authorization", "Bearer "+APICONF["auth"])
-	httpClient := &http.Client{}
-	resp, _ := httpClient.Do(req)
-
-	if resp.StatusCode == 200 {
-		body, _ := ioutil.ReadAll(resp.Body)
-		json.Unmarshal(body, &tickRTSnapshotSlice)
+			switch tickRTSnapshotSlice.RetCode {
+			case -1:
+				Logger.Print(string(body))
+				Logger.Printf("Fetch OK but no Data %s : %d - %s \n", securityIds, tickRTSnapshotSlice.RetCode, tickRTSnapshotSlice.RetMsg)
+				fallthrough
+			case 1:
+				for i := range mds {
+					SetStockStatus(mds[i].Idx, STATUS_RUNNING, "Call DataAPI OK")
+				}
+				ok = true
+			default:
+				Logger.Print(string(body))
+				for i := range mds {
+					SetStockStatus(mds[i].Idx, STATUS_RETRYING, "Call DataAPI Failed (Maybe busy) Retry ...")
+				}
+				retry--
+				time.Sleep(100 * time.Millisecond)
+				Logger.Printf("%s\n", string(body))
+				Logger.Printf("Fetch Failed %s : %d - %s | RetryRemain = %d ..\n", securityIds, tickRTSnapshotSlice.RetCode, tickRTSnapshotSlice.RetMsg, retry)
+			}
+		}
 
 		c := GetNewDbClient()
 		for j := 0; j < len(tickRTSnapshotSlice.Data); j++ {
 			var lastPrice, priceChange, priceChangePct, preClosePrice Dec
-			name := "mktdata." + tickRTSnapshotSlice.Data[j].Ticker + "." + tickRTSnapshotSlice.Data[j].ExchangeCD
+			ticker_exchange := tickRTSnapshotSlice.Data[j].Ticker + "." + tickRTSnapshotSlice.Data[j].ExchangeCD
 
+			idx, ok := idxMap[ticker_exchange]
+			if !ok {
+				Logger.Println("invalid ticker received:", ticker_exchange)
+				continue //impossible?
+			}
+			name := "mktdata." + ticker_exchange
 			if tickRTSnapshotSlice.Data[j].LastPrice == 0 {
 				lastPrice.SetFloat64(tickRTSnapshotSlice.Data[j].PrevClosePrice)
 			} else {
@@ -75,9 +125,7 @@ func process(mds []Stock, ch chan int) {
 			preClosePrice.SetFloat64(tickRTSnapshotSlice.Data[j].PrevClosePrice)
 
 			priceChange.Sub(&lastPrice, &preClosePrice)
-			priceChangePct.Div(&priceChange, &preClosePrice, DECIMAL_PCT+2)
-			priceChangePct.Mul(&priceChangePct, New(100))
-			priceChangePct.Round(DECIMAL_PCT)
+			priceChangePct = CalcPercentage(priceChange, preClosePrice, DECIMAL_PCT+2)
 
 			series := &client.Series{
 				Name: name,
@@ -92,18 +140,37 @@ func process(mds []Stock, ch chan int) {
 				},
 				Points: [][]interface{}{
 					{
-						tickRTSnapshotSlice.Data[j].Ticker + "." + tickRTSnapshotSlice.Data[j].ExchangeCD,
+						ticker_exchange,
 						tickRTSnapshotSlice.Data[j].DataDate,
 						tickRTSnapshotSlice.Data[j].DataTime,
-						lastPrice,
+						lastPrice.Float64(),
 						tickRTSnapshotSlice.Data[j].Volume,
 						tickRTSnapshotSlice.Data[j].Value,
-						priceChange,
-						priceChangePct,
+						priceChange.Float64(),
+						priceChangePct.Float64(),
 					},
 				},
 			}
-			c.WriteSeries([]*client.Series{series})
+			Logger.Println(series)
+			err = c.WriteSeries([]*client.Series{series})
+			if err != nil {
+				Logger.Println(err)
+				SetStockStatus(idx, STATUS_ERROR, "ERROR writing to db...")
+			} else {
+				SetStockStatus(idx, STATUS_DONE, "Standby...")
+			}
+
+		}
+
+		for i := range mds {
+			if mds[i].Status != STATUS_DONE {
+				SetStockStatus(mds[i].Idx, STATUS_RETRYING, "No data, Retry...")
+			}
+		}
+		time.Sleep(timetoSleep)
+		if DEBUGMODE {
+			Logger.Printf("%d / %d records got.  \n", len(tickRTSnapshotSlice.Data), len(mds))
+			break
 		}
 	}
 	ch <- 1

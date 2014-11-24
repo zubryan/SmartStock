@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	. "github.com/dimdin/decimal"
 	"github.com/influxdb/influxdb/client"
 	"github.com/larspensjo/config"
 	"github.com/nsf/termbox-go"
@@ -20,12 +21,22 @@ var (
 	configFile = flag.String("configfile", "config.ini", "General configuration file")
 )
 
+const (
+	STATUS_READY = iota
+	STATUS_RUNNING
+	STATUS_RETRYING
+	STATUS_DONE
+	STATUS_ERROR
+)
+
 type Stock struct {
 	Ticker_exchange string //  "ticker.exchange",
 	Idx             int    // "index in the Mktdatas"
 	DataDate        string // "dataDate",
 	DataTime        string // "dataDate"
-	Done            bool
+	ProcessStart    time.Time
+	Status          uint8
+	Msg             string
 }
 
 const (
@@ -48,8 +59,9 @@ var (
 	Mktdatas        []Stock
 	Processes       []Goproc
 	Logger          *log.Logger
-	LoggerFW        *log.Logger
+	loggerFW        *log.Logger
 	logfile         *os.File
+	goInf           bool = false
 	parallelrunDone bool
 	showmonitor     bool = true
 )
@@ -61,6 +73,29 @@ type Goproc struct {
 	Desc string
 }
 
+func DBdropShards(shardsToDrop []string) {
+	c := GetNewDbClient()
+	// drop ShardSpace instead of droping series which is mu......ch slower~~~
+	Logger.Println("Clear ShardSpace mktdata_daily")
+	ssps, _ := c.GetShardSpaces()
+	for _, ssp := range ssps {
+		if ssp.Database == DBCONF["database"] {
+			for _, shardtodrop := range shardsToDrop {
+				if ssp.Name == shardtodrop {
+					c.DropShardSpace(DBCONF["database"], ssp.Name)
+					c.CreateShardSpace(DBCONF["database"], ssp)
+				}
+			}
+		}
+	}
+}
+func CalcPercentage(v1, v2 Dec, scale uint8) Dec {
+	//TODO: zerodiv here
+	pct := *new(Dec).Div(&v1, &v2, scale)
+	pct = *new(Dec).Mul(&pct, New(100))
+	pct.Round(DECIMAL_PCT)
+	return pct
+}
 func GetNewDbClient() *client.Client {
 	c, err := client.NewClient(&client.ClientConfig{
 		Host:     DBCONF["host"],
@@ -69,7 +104,7 @@ func GetNewDbClient() *client.Client {
 		Database: DBCONF["database"],
 	})
 	if err != nil {
-		LoggerFW.Panic(err)
+		loggerFW.Panic(err)
 	}
 	return c
 }
@@ -86,11 +121,11 @@ func PutSeries(c *client.Client, name string, columns []string, points [][]inter
 	}
 	err := c.WriteSeries([]*client.Series{series})
 	if err != nil {
-		LoggerFW.Println("Cannot Insert")
-		LoggerFW.Println(points)
-		LoggerFW.Panic(err)
+		loggerFW.Println("Cannot Insert")
+		loggerFW.Println(points)
+		loggerFW.Panic(err)
 	}
-	LoggerFW.Printf("INFLUXDB: %d record(s) added to %s", len(series.Points), series.Name)
+	loggerFW.Printf("INFLUXDB: %d record(s) added to %s", len(series.Points), series.Name)
 }
 
 func SetProcess(process Goproc) {
@@ -101,7 +136,7 @@ func init() {
 	initCfg()
 	initLogger()
 	initDB()
-	LoggerFW.Println("[FRAMEWORK]Preparing...")
+	loggerFW.Println("[FRAMEWORK]Preparing...")
 
 	initStocklist()
 }
@@ -112,7 +147,7 @@ func initDB() {
 		Password: DBCONF["password"],
 	})
 	if err != nil {
-		LoggerFW.Panic(err)
+		loggerFW.Panic(err)
 	}
 	dbs, _ := c.GetDatabaseList()
 	dbexists := false
@@ -123,7 +158,7 @@ func initDB() {
 	}
 	if !dbexists {
 		// create schema
-		LoggerFW.Println("Reconstruct DB")
+		loggerFW.Println("Reconstruct DB")
 		c.CreateDatabase(DBCONF["database"])
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata_daily", DBCONF["database"], "/mktdata_daily.*/", "inf", "10000d", 1, 1})
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata", DBCONF["database"], "/mktdata\\..*/", "inf", "7d", 1, 1})
@@ -137,7 +172,7 @@ func CallDataAPI(api_catagory string, version string, api string, parameters []s
 	var url = APICONF["url"] + "/" + api_catagory + "/" + version + "/" + api + "?" + strings.Join(parameters, "&")
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		LoggerFW.Panic(err)
+		loggerFW.Panic(err)
 	} // fmt.Printf("Fetch %s on %s\n", sec, date)
 	req.Header.Add("Authorization", "Bearer "+APICONF["auth"])
 	retry := 0
@@ -145,7 +180,7 @@ func CallDataAPI(api_catagory string, version string, api string, parameters []s
 	for retry < APIMAXRETRY {
 		resp, err := httpClient.Do(req)
 		if err != nil {
-			LoggerFW.Panic(err)
+			loggerFW.Panic(err)
 		}
 		if resp.StatusCode == 200 {
 			body, _ := ioutil.ReadAll(resp.Body)
@@ -168,7 +203,7 @@ func initLogger() {
 		os.Exit(-1)
 	}
 	Logger = log.New(logfile, "[INFO]", LOGOPTS)
-	LoggerFW = log.New(logfile, "[FRWK]", LOGOPTS)
+	loggerFW = log.New(logfile, "[FRWK]", LOGOPTS)
 
 }
 func initCfg() {
@@ -215,6 +250,7 @@ func initStocklist() {
 		Mktdatas = append(Mktdatas, md)
 		s, err = r.ReadString('\n')
 	}
+
 	STOCKCOUNT = len(Mktdatas)
 }
 
@@ -225,89 +261,121 @@ func tbprint(x, y int, fg, bg termbox.Attribute, msg string) {
 	}
 }
 
-func redraw(c, r int) (int, int) {
+func redraw(cntlast int, title, debugflag string, startTime time.Time, fin_flag bool) int {
 	cnt := 0
+	runcnt := 0
+	errcnt := 0
+	retrycnt := 0
+	c, r := 0, 0
+	emptyline := fmt.Sprintf("%+s", " ", termwidth)
+	welcome := "    SMARTSTOCK JOB MONITOR by miuzel : " + title
+	termwidth, _ = termbox.Size()
+	termbox.Clear(termbox.ColorWhite, termbox.ColorBlack)
+	emptyline = fmt.Sprintf("%*c", termwidth, " ")
+	tbprint(0, r, termbox.ColorBlack, termbox.ColorWhite, emptyline)
+	tbprint(c, r, termbox.ColorBlack, termbox.ColorWhite, welcome)
 	for i := range Mktdatas {
 		if i%termwidth == 0 {
 			r++
 			c = 0
 		}
-		if Mktdatas[i].Done {
+		switch Mktdatas[i].Status {
+		case STATUS_DONE:
 			termbox.SetCell(c, r, ' ', termbox.ColorWhite, termbox.ColorWhite)
 			cnt++
-		} else {
+		case STATUS_ERROR:
+			termbox.SetCell(c, r, 'x', termbox.ColorWhite, termbox.ColorRed)
+			errcnt++
+		case STATUS_READY:
 			termbox.SetCell(c, r, ' ', termbox.ColorWhite, termbox.ColorMagenta)
+		case STATUS_RUNNING:
+			termbox.SetCell(c, r, '>', termbox.ColorWhite, termbox.ColorCyan)
+			runcnt++
+		case STATUS_RETRYING:
+			termbox.SetCell(c, r, 'r', termbox.ColorWhite, termbox.ColorYellow)
+			retrycnt++
 		}
 		c++
 	}
 	termbox.SetCell(c, r, ' ', termbox.ColorBlack, termbox.ColorBlack)
 	r++
-	return r, cnt
+	tbprint(0, r, termbox.ColorBlack, termbox.ColorWhite, emptyline)
+	tbprint(0, r, termbox.ColorBlack, termbox.ColorWhite,
+		fmt.Sprintf(" RUNNING[ ]%5d | ERROR  [ ]%5d | RETRY  [ ]%5d | ",
+			runcnt, errcnt, retrycnt))
+	termbox.SetCell(9, r, '>', termbox.ColorWhite, termbox.ColorCyan)
+	termbox.SetCell(10, r, ']', termbox.ColorBlack, termbox.ColorWhite)
+	termbox.SetCell(27, r, 'x', termbox.ColorWhite, termbox.ColorRed)
+	termbox.SetCell(28, r, ']', termbox.ColorBlack, termbox.ColorWhite)
+	termbox.SetCell(45, r, 'r', termbox.ColorWhite, termbox.ColorYellow)
+	termbox.SetCell(46, r, ']', termbox.ColorBlack, termbox.ColorWhite)
+	r++
+	duration := time.Now().Sub(startTime)
+	tbprint(0, r, termbox.ColorBlack, termbox.ColorWhite, emptyline)
+	tbprint(0, r,
+		termbox.ColorBlack,
+		termbox.ColorWhite,
+		fmt.Sprintf(" Sum | %5d Stocks |  %5d Done | %3.3f %% ",
+			len(Mktdatas),
+			cnt,
+			float64(cnt)*100/float64(len(Mktdatas))))
+	r++
+	tbprint(0, r, termbox.ColorBlack, termbox.ColorWhite, emptyline)
+	tbprint(0, r,
+		termbox.ColorBlack,
+		termbox.ColorWhite,
+		fmt.Sprintf("     |     +%5d   | elps %5.2fs | estRm %5.2fs",
+			int(cnt-cntlast), duration.Seconds(), duration.Seconds()/float64(cnt)*float64(len(Mktdatas)-cnt)))
+	r++
+	if cnt == len(Mktdatas) || fin_flag {
+		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, emptyline)
+		tbprint(0, r,
+			termbox.ColorWhite,
+			termbox.ColorBlack,
+			fmt.Sprint("   ESC For Exit        [ All Jobs Done! ]                         ", debugflag))
+	} else {
+		tbprint(0, r, termbox.ColorBlack, termbox.ColorWhite, emptyline)
+		tbprint(0, r,
+			termbox.ColorBlack,
+			termbox.ColorWhite,
+			fmt.Sprint("   ESC For Exit                                                   ", debugflag))
+	}
+	termbox.Flush()
+	return cnt
+}
+
+func SetGoInf() {
+	goInf = true // infinite go
 }
 
 func monitor(title string, ch chan int) {
 	var cnt int
-	var cntlast int
-	debugflag := "=========="
+	debugflag := ""
 	if DEBUGMODE {
 		debugflag = " DEBUG ON "
 	}
 	startTime := time.Now()
-	emptyline := fmt.Sprintf("%+s", " ", termwidth)
-	welcome := "    SMARTSTOCK JOB MONITOR by miuzel : " + title
-	for cnt < len(Mktdatas) && !parallelrunDone {
+	for goInf || (cnt < len(Mktdatas) && !parallelrunDone) {
+		cnt = redraw(cnt, title, debugflag, startTime, false)
 		time.Sleep(500 * time.Millisecond)
-
-		c, r := 0, 0
-		termwidth, _ = termbox.Size()
-		termbox.Clear(termbox.ColorWhite, termbox.ColorBlack)
-		emptyline = fmt.Sprintf("%*c", termwidth, " ")
-		cntlast = cnt
-		c, r = 0, 0
-		tbprint(0, r, termbox.ColorBlack, termbox.ColorWhite, emptyline)
-		tbprint(c, r, termbox.ColorBlack, termbox.ColorWhite, welcome)
-		r, cnt = redraw(c, r)
-		duration := time.Now().Sub(startTime)
-		tbprint(0, r, termbox.ColorBlack, termbox.ColorWhite, emptyline)
-		tbprint(0, r,
-			termbox.ColorBlack,
-			termbox.ColorWhite,
-			fmt.Sprintf(" Sum | %5d Stocks |  %5d Done | %3.3f %% ",
-				len(Mktdatas),
-				cnt,
-				float64(cnt)*100/float64(len(Mktdatas))))
-		r++
-		tbprint(0, r, termbox.ColorBlack, termbox.ColorWhite, emptyline)
-		tbprint(0, r,
-			termbox.ColorBlack,
-			termbox.ColorWhite,
-			fmt.Sprintf("     |     +%5d   | elps %5.2fs | estRm %5.2fs",
-				int(cnt-cntlast), duration.Seconds(), duration.Seconds()/float64(cnt)*float64(len(Mktdatas)-cnt)))
-		r++
-		tbprint(0, r, termbox.ColorBlack, termbox.ColorWhite, emptyline)
-		tbprint(0, r,
-			termbox.ColorBlack,
-			termbox.ColorWhite,
-			fmt.Sprintf("== ESC For Exit ==================================================%.10s====", debugflag))
-		termbox.Flush()
 	}
-	c, r := 0, 0
-	tbprint(0, r, termbox.ColorBlack, termbox.ColorWhite, emptyline)
-	tbprint(c, r, termbox.ColorBlack, termbox.ColorWhite, welcome)
-	r, _ = redraw(c, r)
-	tbprint(0, r, termbox.ColorBlack, termbox.ColorWhite, emptyline)
-	tbprint(0, r,
-		termbox.ColorWhite,
-		termbox.ColorBlack,
-		fmt.Sprintf("== ESC For Exit ======== All Jobs Done! ==========================%.10s====", debugflag))
-	termbox.Flush()
+	redraw(cnt, title, debugflag, startTime, true)
 	ch <- 1
 }
+func SetStockStatus(idx int, status uint8, msg string) {
+	Mktdatas[idx].Status = status
+	Mktdatas[idx].Msg = msg
+}
 
+func StartProcess(idx int) {
+	SetStockStatus(idx, STATUS_RUNNING,
+		fmt.Sprintf("%s Processing...", Mktdatas[idx].Ticker_exchange))
+	Mktdatas[idx].ProcessStart = time.Now()
+}
 func parallelrun(process Goproc) {
 	parallelrunDone = false
 	for i := range Mktdatas {
-		Mktdatas[i].Done = false
+		Mktdatas[i].Status = STATUS_READY
 	}
 	fmt.Println("All Jobs Start")
 	chm := make(chan int)
@@ -322,12 +390,12 @@ func parallelrun(process Goproc) {
 			slen = STOCKCOUNT
 		}
 		chs[i] = make(chan int)
-		LoggerFW.Printf("[FRAMEWORK]Start from %d to %d\n", i*GROUPMOD+1, slen)
+		loggerFW.Printf("[FRAMEWORK]Start from %d to %d\n", i*GROUPMOD+1, slen)
 		go process.DoGo(Mktdatas[i*GROUPMOD:slen], chs[i])
 		// j := i
 	}
 
-	LoggerFW.Printf("[FRAMEWORK]Waiting gorts\n")
+	loggerFW.Printf("[FRAMEWORK]Waiting gorts\n")
 	for _, ch := range chs {
 		<-ch
 	}
@@ -343,6 +411,9 @@ func termEvent() {
 		case termbox.EventKey:
 			switch ev.Key {
 			case termbox.KeyEsc:
+				for _, x := range Mktdatas {
+					loggerFW.Println(x)
+				}
 				os.Exit(0)
 			}
 		case termbox.EventResize:
@@ -356,16 +427,23 @@ func Main() {
 	if err != nil {
 		showmonitor = false
 	} else {
+
 		defer termbox.Close()
 		termwidth, _ = termbox.Size()
 		termbox.Clear(termbox.ColorWhite, termbox.ColorBlack)
 		go termEvent()
+		// don't exit waiting for ESC
 	}
 	for i, process := range Processes {
-		LoggerFW.Printf("[FRAMEWORK]Step %d: %s ...\n", i+1, process.Desc)
+		loggerFW.Printf("[FRAMEWORK]Step %d: %s ...\n", i+1, process.Desc)
 		parallelrun(process)
 	}
 
-	LoggerFW.Println("[FRAMEWORK]Done")
+	loggerFW.Println("[FRAMEWORK]Done")
 	logfile.Close()
+	if showmonitor {
+		for {
+			time.Sleep(time.Hour) // don't exit wait for ESC
+		}
+	}
 }
