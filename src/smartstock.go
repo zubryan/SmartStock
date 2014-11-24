@@ -2,15 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	. "fmt"
+	. "github.com/dimdin/decimal"
 	"github.com/influxdb/influxdb/client"
 	"io/ioutil"
 	"net/http"
 	. "smartstock/framework"
-)
-
-const (
-	DECIMALS = 100000
 )
 
 type TickRTSnapshot struct {
@@ -38,8 +34,7 @@ type TickRTSnapshotSlice struct {
 var TickRTSnapshotFields = [12]string{"dataDate", "dataTime", "shortNM", "currencyCD", "prevClosePrice", "openPrice", "volume", "value", "deal", "highPrice", "lowPrice", "lastPrice"}
 
 func init() {
-	Println(STOCKCOUNT)
-	SetProcess(Goproc{process, "doTickRTSnapshot"})
+	SetProcess(Goproc{process, "Get 1 TickRTSnapshot"})
 }
 
 func process(mds []Stock, ch chan int) {
@@ -67,23 +62,22 @@ func process(mds []Stock, ch chan int) {
 		body, _ := ioutil.ReadAll(resp.Body)
 		json.Unmarshal(body, &tickRTSnapshotSlice)
 
-		c, _ := client.NewClient(&client.ClientConfig{
-			Host:     DBCONF["host"],
-			Username: DBCONF["username"],
-			Password: DBCONF["password"],
-			Database: DBCONF["database"],
-		})
-
+		c := GetNewDbClient()
 		for j := 0; j < len(tickRTSnapshotSlice.Data); j++ {
+			var lastPrice, priceChange, priceChangePct, preClosePrice Dec
 			name := "mktdata." + tickRTSnapshotSlice.Data[j].Ticker + "." + tickRTSnapshotSlice.Data[j].ExchangeCD
-			var lastPrice int64
+
 			if tickRTSnapshotSlice.Data[j].LastPrice == 0 {
-				lastPrice = ToInt(tickRTSnapshotSlice.Data[j].PrevClosePrice)
+				lastPrice.SetFloat64(tickRTSnapshotSlice.Data[j].PrevClosePrice)
 			} else {
-				lastPrice = ToInt(tickRTSnapshotSlice.Data[j].LastPrice)
+				lastPrice.SetFloat64(tickRTSnapshotSlice.Data[j].LastPrice)
 			}
-			priceChange := lastPrice - ToInt(tickRTSnapshotSlice.Data[j].PrevClosePrice)
-			priceChangePt := Div(priceChange, ToInt(tickRTSnapshotSlice.Data[j].PrevClosePrice)) * 100 * DECIMALS
+			preClosePrice.SetFloat64(tickRTSnapshotSlice.Data[j].PrevClosePrice)
+
+			priceChange.Sub(&lastPrice, &preClosePrice)
+			priceChangePct.Div(&priceChange, &preClosePrice, DECIMAL_PCT+2)
+			priceChangePct.Mul(&priceChangePct, New(100))
+			priceChangePct.Round(DECIMAL_PCT)
 
 			series := &client.Series{
 				Name: name,
@@ -97,7 +91,16 @@ func process(mds []Stock, ch chan int) {
 					"price_change_percentage",
 				},
 				Points: [][]interface{}{
-					{tickRTSnapshotSlice.Data[j].Ticker + "." + tickRTSnapshotSlice.Data[j].ExchangeCD, tickRTSnapshotSlice.Data[j].DataDate, tickRTSnapshotSlice.Data[j].DataTime, lastPrice, tickRTSnapshotSlice.Data[j].Volume, tickRTSnapshotSlice.Data[j].Value, priceChange, priceChangePt},
+					{
+						tickRTSnapshotSlice.Data[j].Ticker + "." + tickRTSnapshotSlice.Data[j].ExchangeCD,
+						tickRTSnapshotSlice.Data[j].DataDate,
+						tickRTSnapshotSlice.Data[j].DataTime,
+						lastPrice,
+						tickRTSnapshotSlice.Data[j].Volume,
+						tickRTSnapshotSlice.Data[j].Value,
+						priceChange,
+						priceChangePct,
+					},
 				},
 			}
 			c.WriteSeries([]*client.Series{series})
