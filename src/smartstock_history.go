@@ -289,7 +289,7 @@ func correctMktData(beforeCorr []MktdataDaily, afterCorr []MktdataDaily,
 		if j == 0 {
 			afterCorr[j].preClosePrice = *new(Dec).Mul(&afterCorr[j].preClosePrice, &factors[j]).Round(2)
 		} else {
-			afterCorr[j].preClosePrice = afterCorr[j-1].preClosePrice //prevClose
+			afterCorr[j].preClosePrice = afterCorr[j-1].closePrice //prevClose
 		}
 		preClosePrice := afterCorr[j].preClosePrice
 
