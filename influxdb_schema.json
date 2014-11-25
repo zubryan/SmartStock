@@ -95,9 +95,8 @@
         }
     },
     {
-        "name": "metrics",
+        "name": "metrics.@ticker.@exchangeCD",
         "columns": [
-            "ticker.exchange",
             "dataDate",
             "dataTime",
             "X1-1",

@@ -76,12 +76,12 @@ type Goproc struct {
 func DBdropShards(shardsToDrop []string) {
 	c := GetNewDbClient()
 	// drop ShardSpace instead of droping series which is mu......ch slower~~~
-	Logger.Println("Clear ShardSpace mktdata_daily")
 	ssps, _ := c.GetShardSpaces()
 	for _, ssp := range ssps {
 		if ssp.Database == DBCONF["database"] {
 			for _, shardtodrop := range shardsToDrop {
 				if ssp.Name == shardtodrop {
+					loggerFW.Printf("Rebuild ShardSpace %s\n", ssp.Name)
 					c.DropShardSpace(DBCONF["database"], ssp.Name)
 					c.CreateShardSpace(DBCONF["database"], ssp)
 				}
@@ -162,6 +162,9 @@ func initDB() {
 		c.CreateDatabase(DBCONF["database"])
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata_daily", DBCONF["database"], "/mktdata_daily.*/", "inf", "10000d", 1, 1})
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata", DBCONF["database"], "/mktdata\\..*/", "inf", "7d", 1, 1})
+		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"metrics", DBCONF["database"], "/metrics\\..*/", "inf", "7d", 1, 1})
+		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"alerts", DBCONF["database"], "/alerts\\..*/", "inf", "10000d", 1, 1})
+		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata", DBCONF["database"], "/mktdata\\..*/", "inf", "7d", 1, 1})
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"indicators", DBCONF["database"], "/indicators\\..*/", "inf", "10000d", 1, 1})
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"default", DBCONF["database"], "/.*/", "inf", "30d", 1, 1})
 	}
@@ -215,6 +218,7 @@ func initCfg() {
 
 	GROUPMOD, _ = cfg.Int("GENERAL", "groupmod")
 	DEBUGMODE, _ = cfg.Bool("GENERAL", "debugmode")
+	showmonitor, _ = cfg.Bool("GENERAL", "monitor")
 	LOGFILE, _ = cfg.String("LOGGER", "filename")
 
 	APICONF["url"], _ = cfg.String("API", "url")
@@ -411,10 +415,16 @@ func termEvent() {
 		case termbox.EventKey:
 			switch ev.Key {
 			case termbox.KeyEsc:
+
+				welcome := "    SMARTSTOCK JOB MONITOR by miuzel : Finished."
+				tbprint(0, 0, termbox.ColorBlack, termbox.ColorWhite, welcome)
+				termbox.Flush()
 				for _, x := range Mktdatas {
 					loggerFW.Println(x)
 				}
+				termbox.Close()
 				os.Exit(0)
+				loggerFW.Panic("Cannot exit Console")
 			}
 		case termbox.EventResize:
 			termwidth, _ = termbox.Size()
@@ -423,16 +433,19 @@ func termEvent() {
 }
 func Main() {
 
-	err := termbox.Init()
-	if err != nil {
-		showmonitor = false
-	} else {
+	if showmonitor {
 
-		defer termbox.Close()
-		termwidth, _ = termbox.Size()
-		termbox.Clear(termbox.ColorWhite, termbox.ColorBlack)
-		go termEvent()
-		// don't exit waiting for ESC
+		err := termbox.Init()
+		if err != nil {
+			showmonitor = false
+		} else {
+
+			defer termbox.Close()
+			termwidth, _ = termbox.Size()
+			termbox.Clear(termbox.ColorWhite, termbox.ColorBlack)
+			go termEvent()
+			// don't exit waiting for ESC
+		}
 	}
 	for i, process := range Processes {
 		loggerFW.Printf("[FRAMEWORK]Step %d: %s ...\n", i+1, process.Desc)
