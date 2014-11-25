@@ -72,6 +72,7 @@ type Refdata struct {
 	isQualified   bool // some stock has less data than needed
 	isAlertRaised bool
 	Metrics       Metrics
+	AlertMsg      string
 }
 type Alert struct {
 	criteriaHit string // "criteriaHit"
@@ -149,10 +150,10 @@ func isHitCriteria_2(m *Metrics) bool {
 
 func init() {
 	Ref = make([]Refdata, STOCKCOUNT)
-	SetProcess(Goproc{loadRefData, "Loading RefData..."})
 	if !DEBUGMODE {
 		SetGoInf()
 	}
+	SetProcess(Goproc{loadRefData, "Loading RefData..."})
 	SetProcess(Goproc{calcRealTimeMktData, "Continuously Monitor the Markets ..."})
 	DBdropShards([]string{"metrics", "alerts"})
 }
@@ -395,7 +396,7 @@ func loadRefData(mds []Stock, ch chan int) {
 		} else {
 			SetStockStatus(Idx, STATUS_ERROR, "Not enough data!")
 		}
-		if DEBUGMODE {
+		if DEBUGMODE && i == 2 {
 			Logger.Println(*pRef)
 			break
 		}
@@ -415,7 +416,7 @@ func calcRealTimeMktData(mds []Stock, ch chan int) {
 					StartProcess(idx)
 					if HaveAlerts(idx) {
 						(*pRef).isAlertRaised = true
-						SetStockStatus(idx, STATUS_DONE, "Alert Raised.")
+						SetStockStatus(idx, STATUS_DONE, "Alert"+(*pRef).AlertMsg)
 					} else {
 						SetStockStatus(idx, STATUS_READY, "Standby LstTime:"+Ref[idx].dataTime)
 					}
@@ -423,16 +424,16 @@ func calcRealTimeMktData(mds []Stock, ch chan int) {
 			} else {
 				SetStockStatus(idx, STATUS_ERROR, "Not enough data!")
 			}
-			if DEBUGMODE {
+			if DEBUGMODE && i == 2 {
 				Logger.Printf("OK.  \n")
 				break
 			}
 		}
-		if DEBUGMODE {
-			break
-		}
+		// if DEBUGMODE {
+		// 	break
+		// }
 
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(1000 * time.Millisecond)
 	}
 	ch <- 1
 }
@@ -442,9 +443,11 @@ func HaveAlerts(Idx int) bool {
 	c := GetNewDbClient()
 	query := fmt.Sprintf("select dataDate,dataTime,lastPrice,price_change_percentage,volume "+
 		"from mktdata.%s where time > %d", (*pRef).ticker_exchange, (*pRef).lasttime)
-	Logger.Println(query)
-	series, err := c.Query(query)
 
+	if DEBUGMODE {
+		Logger.Println(query)
+	}
+	series, err := c.Query(query)
 	if err != nil {
 		Logger.Println(err)
 	}
@@ -455,6 +458,14 @@ func HaveAlerts(Idx int) bool {
 
 	columns := series[0].GetColumns()
 	points := series[0].GetPoints()
+	if DEBUGMODE {
+		Logger.Println(len(points), " records Read")
+	}
+	if len(points) == 0 {
+		Logger.Printf("%s No data", (*pRef).ticker_exchange)
+		return false
+	}
+
 	var idxtime, idxdataDate, idxdataTime, idxlastPrice, idxPriceChgPct, idxVol int
 	for i, _ := range columns {
 		switch columns[i] {
@@ -482,14 +493,14 @@ func HaveAlerts(Idx int) bool {
 	// X3       Dec    // "X3", abs(MACD)
 	// X4       Dec    // "X4", tradableQty * Prc
 	TotalMinute := TotalMinute()
+	ok := true
+	f, ok := points[0][idxtime].(float64)
+	if !ok {
+		Logger.Panic("No lasttime")
+	}
+	(*pRef).lasttime = int64(f) * 1e6
 	for _, p := range points {
 		m := &(*pRef).Metrics
-		ok := true
-		f, ok := p[idxtime].(float64)
-		if !ok {
-			Logger.Panic("No lasttime")
-		}
-		(*pRef).lasttime = int64(f)
 		var volume, lstprice, prcChg float64
 		var volDec, prcDec Dec
 		(*pRef).dataTime, _ = p[idxdataTime].(string)
@@ -534,14 +545,15 @@ func HaveAlerts(Idx int) bool {
 
 func genAlert(Idx int, cri *Criteria, m *Metrics) {
 	var alert Alert
-	alert.criteriaHit = Ref[Idx].shortName + " > " + (*cri).name
-	alert.criteriaHit += fmt.Sprintf("X1_1: %f | X1_2: %f | X2: %f | X3: %f | X4: %f | Y1: %s | Y2: %s |",
+	alert.criteriaHit = Ref[Idx].shortName + "@" + Ref[Idx].dataTime + " > " + (*cri).name
+	alert.criteriaHit += fmt.Sprintf(" |X1_1:%.3f X1_2:%.3f X2:%.3f X3:%.3f X4:%.3f Y1:%s Y2:%s ",
 		(*m).X1_1.Float64(),
 		(*m).X1_2.Float64(),
 		(*m).X2.Float64(),
 		(*m).X3.Float64(),
 		(*m).X4.Float64(),
 		fmt.Sprint((*m).Y1), fmt.Sprint((*m).Y2))
+	Ref[Idx].AlertMsg = alert.criteriaHit
 	c := GetNewDbClient()
 	PutSeries(c, "alerts", columns_alert[:], Alert2Pnts(Idx, []Alert{alert}))
 }
@@ -646,7 +658,9 @@ func Metrics2Pnts(Idx int, metrics []Metrics) [][]interface{} {
 	datetime, _ := time.Parse("2006-01-02 15:04:05",
 		(*pRef).dataDate+" "+(*pRef).dataTime)
 	timeInt := datetime.UnixNano() / 1e6
-	Logger.Println(metrics)
+	if DEBUGMODE {
+		Logger.Println(metrics)
+	}
 	for i := range metrics {
 		points[i] = []interface{}{
 			timeInt,
@@ -661,7 +675,9 @@ func Metrics2Pnts(Idx int, metrics []Metrics) [][]interface{} {
 			metrics[i].X4.Float64(),   // X4   Dec  // "X4", tradableQty * Prc
 		}
 	}
-	Logger.Println(points)
+	if DEBUGMODE {
+		Logger.Println(points)
+	}
 	return points
 }
 

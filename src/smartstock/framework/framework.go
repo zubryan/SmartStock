@@ -21,6 +21,10 @@ var (
 	configFile = flag.String("configfile", "config.ini", "General configuration file")
 )
 
+var selected int = -1
+var mouseX int = -1
+var mouseY int = -1
+
 const (
 	STATUS_READY = iota
 	STATUS_RUNNING
@@ -28,6 +32,14 @@ const (
 	STATUS_DONE
 	STATUS_ERROR
 )
+
+var StatusVal = map[uint8]string{
+	STATUS_READY:    "READY   ",
+	STATUS_RUNNING:  "RUNNING ",
+	STATUS_RETRYING: "RETRYING",
+	STATUS_DONE:     "DONE    ",
+	STATUS_ERROR:    "ERROR   ",
+}
 
 type Stock struct {
 	Ticker_exchange string //  "ticker.exchange",
@@ -73,6 +85,8 @@ type Goproc struct {
 	Desc string
 }
 
+var title string = "Initializing..."
+
 func DBdropShards(shardsToDrop []string) {
 	c := GetNewDbClient()
 	// drop ShardSpace instead of droping series which is mu......ch slower~~~
@@ -114,18 +128,26 @@ func ReplaceSeries(c *client.Client, name string, columns []string, points [][]i
 }
 
 func PutSeries(c *client.Client, name string, columns []string, points [][]interface{}) {
-	series := &client.Series{
-		Name:    name,
-		Columns: columns,
-		Points:  points,
+	retry := APIMAXRETRY
+	ok := false
+	var err error
+	for ok == false && retry > 0 {
+		series := &client.Series{
+			Name:    name,
+			Columns: columns,
+			Points:  points,
+		}
+		err = c.WriteSeries([]*client.Series{series})
+		if err != nil {
+			loggerFW.Println("Cannot Insert")
+			loggerFW.Println(points)
+			retry--
+		}
+		loggerFW.Printf("INFLUXDB: %d record(s) added to %s", len(series.Points), series.Name)
+		ok = true
+		return
 	}
-	err := c.WriteSeries([]*client.Series{series})
-	if err != nil {
-		loggerFW.Println("Cannot Insert")
-		loggerFW.Println(points)
-		loggerFW.Panic(err)
-	}
-	loggerFW.Printf("INFLUXDB: %d record(s) added to %s", len(series.Points), series.Name)
+	loggerFW.Panic(err)
 }
 
 func SetProcess(process Goproc) {
@@ -183,7 +205,9 @@ func CallDataAPI(api_catagory string, version string, api string, parameters []s
 	for retry < APIMAXRETRY {
 		resp, err := httpClient.Do(req)
 		if err != nil {
-			loggerFW.Panic(err)
+			loggerFW.Println(err)
+			time.Sleep(time.Second)
+			retry++
 		}
 		if resp.StatusCode == 200 {
 			body, _ := ioutil.ReadAll(resp.Body)
@@ -260,12 +284,16 @@ func initStocklist() {
 
 func tbprint(x, y int, fg, bg termbox.Attribute, msg string) {
 	for _, c := range msg {
+
 		termbox.SetCell(x, y, c, fg, bg)
 		x++
+		if c > 128 {
+			x++ //utf8?
+		}
 	}
 }
 
-func redraw(cntlast int, title, debugflag string, startTime time.Time, fin_flag bool) int {
+func redraw(cntlast int, debugflag string, startTime time.Time, fin_flag bool) int {
 	cnt := 0
 	runcnt := 0
 	errcnt := 0
@@ -275,30 +303,60 @@ func redraw(cntlast int, title, debugflag string, startTime time.Time, fin_flag 
 	welcome := "    SMARTSTOCK JOB MONITOR by miuzel : " + title
 	termwidth, _ = termbox.Size()
 	termbox.Clear(termbox.ColorWhite, termbox.ColorBlack)
-	emptyline = fmt.Sprintf("%*c", termwidth, " ")
+	emptyline = fmt.Sprintf("%*c", termwidth, ' ')
 	tbprint(0, r, termbox.ColorBlack, termbox.ColorWhite, emptyline)
 	tbprint(c, r, termbox.ColorBlack, termbox.ColorWhite, welcome)
+	r++
+	if selected >= 0 && selected <= STOCKCOUNT && STOCKCOUNT > 0 {
+		msg := fmt.Sprintf("%4d:%s[%s %s][ST:%s] %s ",
+			Mktdatas[selected].Idx,
+			Mktdatas[selected].Ticker_exchange,
+			Mktdatas[selected].DataDate,
+			Mktdatas[selected].DataTime,
+			StatusVal[Mktdatas[selected].Status],
+			Mktdatas[selected].Msg) + emptyline + emptyline
+		if strings.Contains(msg, "|") {
+			msg = fmt.Sprintf("%-*s%-*s", termwidth, strings.Split(msg, "|")[0], termwidth, strings.Split(msg, "|")[1])
+		}
+		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, emptyline)
+		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, msg[:termwidth])
+		r++
+		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, msg[termwidth:2*termwidth])
+	} else {
+		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, emptyline)
+		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack,
+			fmt.Sprintf("           [Left Click to Select]"))
+		r++
+		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, emptyline)
+		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack,
+			fmt.Sprintf("           [Selected: None] X:%d Y:%d", mouseX, mouseY))
+	}
 	for i := range Mktdatas {
 		if i%termwidth == 0 {
 			r++
 			c = 0
 		}
-		switch Mktdatas[i].Status {
-		case STATUS_DONE:
-			termbox.SetCell(c, r, ' ', termbox.ColorWhite, termbox.ColorWhite)
-			cnt++
-		case STATUS_ERROR:
-			termbox.SetCell(c, r, 'x', termbox.ColorWhite, termbox.ColorRed)
-			errcnt++
-		case STATUS_READY:
-			termbox.SetCell(c, r, ' ', termbox.ColorWhite, termbox.ColorMagenta)
-		case STATUS_RUNNING:
-			termbox.SetCell(c, r, '>', termbox.ColorWhite, termbox.ColorCyan)
-			runcnt++
-		case STATUS_RETRYING:
-			termbox.SetCell(c, r, 'r', termbox.ColorWhite, termbox.ColorYellow)
-			retrycnt++
+		if i == selected {
+			termbox.SetCell(c, r, ' ', termbox.ColorGreen, termbox.ColorGreen)
+		} else {
+			switch Mktdatas[i].Status {
+			case STATUS_DONE:
+				termbox.SetCell(c, r, ' ', termbox.ColorWhite, termbox.ColorWhite)
+				cnt++
+			case STATUS_ERROR:
+				termbox.SetCell(c, r, 'x', termbox.ColorWhite, termbox.ColorRed)
+				errcnt++
+			case STATUS_READY:
+				termbox.SetCell(c, r, ' ', termbox.ColorWhite, termbox.ColorMagenta)
+			case STATUS_RUNNING:
+				termbox.SetCell(c, r, '>', termbox.ColorWhite, termbox.ColorCyan)
+				runcnt++
+			case STATUS_RETRYING:
+				termbox.SetCell(c, r, 'r', termbox.ColorWhite, termbox.ColorYellow)
+				retrycnt++
+			}
 		}
+
 		c++
 	}
 	termbox.SetCell(c, r, ' ', termbox.ColorBlack, termbox.ColorBlack)
@@ -352,7 +410,7 @@ func SetGoInf() {
 	goInf = true // infinite go
 }
 
-func monitor(title string, ch chan int) {
+func monitor(ch chan int) {
 	var cnt int
 	debugflag := ""
 	if DEBUGMODE {
@@ -360,10 +418,10 @@ func monitor(title string, ch chan int) {
 	}
 	startTime := time.Now()
 	for goInf || (cnt < len(Mktdatas) && !parallelrunDone) {
-		cnt = redraw(cnt, title, debugflag, startTime, false)
+		cnt = redraw(cnt, debugflag, startTime, false)
 		time.Sleep(500 * time.Millisecond)
 	}
-	redraw(cnt, title, debugflag, startTime, true)
+	redraw(cnt, debugflag, startTime, true)
 	ch <- 1
 }
 func SetStockStatus(idx int, status uint8, msg string) {
@@ -381,12 +439,6 @@ func parallelrun(process Goproc) {
 	for i := range Mktdatas {
 		Mktdatas[i].Status = STATUS_READY
 	}
-	fmt.Println("All Jobs Start")
-	chm := make(chan int)
-	if showmonitor {
-		go monitor(process.Desc, chm)
-	}
-
 	chs := make(map[int]chan int)
 	for i := 0; i*GROUPMOD < STOCKCOUNT; i += 1 {
 		var slen int = (i + 1) * GROUPMOD
@@ -404,9 +456,13 @@ func parallelrun(process Goproc) {
 		<-ch
 	}
 	parallelrunDone = true
-	if showmonitor {
-		<-chm
-	}
+}
+func doMouse(ev *termbox.Event) {
+	mouseX = ev.MouseX
+	mouseY = ev.MouseY
+	c := ev.MouseX
+	r := ev.MouseY - 3
+	selected = r*termwidth + c
 }
 
 func termEvent() {
@@ -415,19 +471,24 @@ func termEvent() {
 		case termbox.EventKey:
 			switch ev.Key {
 			case termbox.KeyEsc:
-
-				welcome := "    SMARTSTOCK JOB MONITOR by miuzel : Finished."
+				welcome := "    SMARTSTOCK JOB MONITOR by miuzel : Finished. Bye"
 				tbprint(0, 0, termbox.ColorBlack, termbox.ColorWhite, welcome)
 				termbox.Flush()
 				for _, x := range Mktdatas {
 					loggerFW.Println(x)
 				}
+				time.Sleep(time.Second)
 				termbox.Close()
 				os.Exit(0)
 				loggerFW.Panic("Cannot exit Console")
 			}
 		case termbox.EventResize:
 			termwidth, _ = termbox.Size()
+			welcome := "    Resizing..."
+			tbprint(0, 0, termbox.ColorBlack, termbox.ColorWhite, welcome)
+		case termbox.EventMouse:
+			doMouse(&ev)
+			termbox.Flush()
 		}
 	}
 }
@@ -441,15 +502,24 @@ func Main() {
 		} else {
 
 			defer termbox.Close()
+			termbox.SetInputMode(termbox.InputEsc | termbox.InputMouse)
 			termwidth, _ = termbox.Size()
 			termbox.Clear(termbox.ColorWhite, termbox.ColorBlack)
 			go termEvent()
 			// don't exit waiting for ESC
 		}
 	}
+	chm := make(chan int)
+	if showmonitor {
+		go monitor(chm)
+	}
 	for i, process := range Processes {
 		loggerFW.Printf("[FRAMEWORK]Step %d: %s ...\n", i+1, process.Desc)
+		title = process.Desc
 		parallelrun(process)
+	}
+	if showmonitor {
+		<-chm
 	}
 
 	loggerFW.Println("[FRAMEWORK]Done")
