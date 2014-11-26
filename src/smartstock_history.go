@@ -305,8 +305,8 @@ func loadHistdata(mds []Stock, ch chan int) {
 		Logger.Printf("%s Done | duration %s | %d to go.\n", mds[i].Ticker_exchange, duration, len(mds)-i-1)
 
 		SetStockStatus(mds[i].Idx, STATUS_DONE,
-			fmt.Sprintf("Done %d days calculated, duration %s",
-				days, duration))
+			fmt.Sprintf("%s\nDone %d days calculated\nDuration %s",
+				mds[i].Ticker_exchange, days, duration))
 		if DEBUGMODE && i > (debuggonumber-1) {
 			break
 		}

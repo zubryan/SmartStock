@@ -208,8 +208,9 @@ func CallDataAPI(api_catagory string, version string, api string, parameters []s
 			loggerFW.Println(err)
 			time.Sleep(time.Second)
 			retry++
+			continue
 		}
-		if resp.StatusCode == 200 {
+		if resp != nil && resp.StatusCode == 200 {
 			body, _ := ioutil.ReadAll(resp.Body)
 			return body, nil
 		} else {
@@ -314,14 +315,20 @@ func redraw(cntlast int, debugflag string, startTime time.Time, fin_flag bool) i
 			Mktdatas[selected].DataDate,
 			Mktdatas[selected].DataTime,
 			StatusVal[Mktdatas[selected].Status],
-			Mktdatas[selected].Msg) + emptyline + emptyline
-		if strings.Contains(msg, "|") {
-			msg = fmt.Sprintf("%-*s%-*s", termwidth, strings.Split(msg, "|")[0], termwidth, strings.Split(msg, "|")[1])
+			Mktdatas[selected].Msg) + emptyline + emptyline + emptyline
+		if strings.Contains(msg, "\n") {
+			var msgt string = ""
+			for _, s := range strings.Split(msg, "\n") {
+				msgt += fmt.Sprintf("%-*s", termwidth, s)
+			}
+			msg = msgt
 		}
 		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, emptyline)
 		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, msg[:termwidth])
 		r++
 		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, msg[termwidth:2*termwidth])
+		r++
+		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, msg[2*termwidth:3*termwidth])
 	} else {
 		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, emptyline)
 		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack,
@@ -330,6 +337,8 @@ func redraw(cntlast int, debugflag string, startTime time.Time, fin_flag bool) i
 		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, emptyline)
 		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack,
 			fmt.Sprintf("           [Selected: None] X:%d Y:%d", mouseX, mouseY))
+		r++
+		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, emptyline)
 	}
 	for i := range Mktdatas {
 		if i%termwidth == 0 {
@@ -461,7 +470,7 @@ func doMouse(ev *termbox.Event) {
 	mouseX = ev.MouseX
 	mouseY = ev.MouseY
 	c := ev.MouseX
-	r := ev.MouseY - 3
+	r := ev.MouseY - 4
 	selected = r*termwidth + c
 }
 
