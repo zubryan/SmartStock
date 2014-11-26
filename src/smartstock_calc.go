@@ -139,7 +139,7 @@ func isHitCriteria_2(m *Metrics) bool {
 	var macdx Dec
 	macdx.SetFloat64(0.2)
 	return (*m).X1_1.Cmp(New(2)) > 0 &&
-		(*m).X2.Cmp(New(-3)) > 0 &&
+		(*m).X2.Cmp(New(-3)) < 0 &&
 		!(*m).Y1 &&
 		!(*m).Y2 &&
 		(*m).X3.Cmp(&macdx) < 0 &&
