@@ -268,7 +268,7 @@ func (z *Int128) Mul(x, y *Int128) *Int128 {
 	u.Abs(x)
 	v.Abs(y)
 	mul(&u, &v, &w)
-	if x.Sign() != y.Sign() {
+	if (x.Sign() < 0) != (y.Sign() < 0) {
 		z.Neg(&w)
 	} else {
 		*z = w
