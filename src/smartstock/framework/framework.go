@@ -274,6 +274,9 @@ func initStocklist() {
 		md.DataDate = ""
 		md.DataTime = ""
 		md.Idx = idx
+                md.ProcessStart = time.Now()
+                md.Status = STATUS_READY
+	        md.Msg = "Initialized."
 		idx++
 		Mktdatas = append(Mktdatas, md)
 		s, err = r.ReadString('\n')
@@ -477,7 +480,8 @@ func termEvent() {
 				for _, x := range Mktdatas {
 					loggerFW.Println(x)
 				}
-				time.Sleep(time.Second)
+				loggerFW.Println("esc pressed EXIT")
+				time.Sleep(5* time.Second)
 				termbox.Close()
 				os.Exit(0)
 				loggerFW.Panic("Cannot exit Console")
@@ -499,6 +503,7 @@ func Main() {
 		err := termbox.Init()
 		if err != nil {
 			showmonitor = false
+                        fmt.Println("No Monitor or Term Init fail")
 		} else {
 
 			defer termbox.Close()
