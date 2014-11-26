@@ -106,7 +106,7 @@ def alert(exchange, date, time):
             return "{}", 403
         else:
             db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
-            result = db.query("select * from alert where dataDate = '%s' and dataTime > '%s'" % (date, time))
+            result = db.query("select * from alerts where dataDate = '%s' and dataTime > '%s'" % (date, time))
             return json.dumps(result)
     except:
         traceback.print_exc()
@@ -125,7 +125,7 @@ def report(exchange, date):
             return "{}", 403
         else:
             db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
-            result = db.query("select * from alert where dataDate = '%s'" % (date))
+            result = db.query("select * from alerts where dataDate = '%s'" % (date))
             def generate():
                 cols = result[0]['columns']
                 datas = result[0]['points']
@@ -150,7 +150,3 @@ if __name__ == '__main__':
     print 'Run server'
     logging.info('Run server')
     app.run(debug=True)
-
-
-
-

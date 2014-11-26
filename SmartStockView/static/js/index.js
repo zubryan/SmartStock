@@ -1,5 +1,9 @@
 var lastTime
 var sequence = {}
+var exchanges = {
+    "XSHG": "sh",
+    "XSHE": "sz"
+}
 
 function today() {
     var date = new Date()
@@ -7,6 +11,12 @@ function today() {
     var month = date.getMonth() + 1
     var d = date.getDate()
     return year + "-" + month + "-" + d
+}
+
+function refreshUnread(){
+    var unreadCount = $(".need-read").length
+    $("#unread-count").html(unreadCount)
+    document.title = "您有" + unreadCount + "条未读提醒"
 }
 
 function doLogin() {
@@ -49,28 +59,35 @@ function initAlert() {
     $.getJSON("/alert/a/" + today() + "/00:00:00", function(data) {
         $("#content").show()
         $("#login").hide()
+        lastTime = "00:00:00"
         if (data.length > 0) {
             var columns = data[0]["columns"]
             var points = data[0]["points"]
             var thead = $("#alertTable thead")
             var theadHTML = "<tr>"
-            theadHTML += "<th>ticker.exchange</th>"
-            theadHTML += "<th>dataDate</th>"
-            theadHTML += "<th>dataTime</th>"
+            theadHTML += "<th width=\"140px\">ticker.exchange</th>"
+            theadHTML += "<th width=\"100px\">dataDate</th>"
+            theadHTML += "<th width=\"100px\">dataTime</th>"
             theadHTML += "<th>criteriaHit</th>"
+            theadHTML += "</tr>"
+            thead.html(theadHTML)
+
             for (var i = 0; i < columns.length; i++) {
                 sequence[columns[i]] = i
             }
-            theadHTML += "</tr>"
-            thead.html(theadHTML)
 
             var tbody = $("#alertTable tbody")
             var tbodyHTML = ""
             for (var i = 0; i < points.length; i++) {
                 tbodyHTML += "<tr class=\"need-read\">"
 
+                var parts = points[i][sequence["ticker.exchange"]].split(".")
+                var ticker = parts[0]
+                var exchange = exchanges[parts[1]]
                 tbodyHTML += "<td>"
+                tbodyHTML += "<a href=\"http://finance.sina.com.cn/realstock/company/" + exchange + ticker + "/nc.shtml\" target=\"_blank\">"
                 tbodyHTML += points[i][sequence["ticker.exchange"]]
+                tbodyHTML += "</a>"
                 tbodyHTML += "</td>"
 
                 tbodyHTML += "<td>"
@@ -108,8 +125,13 @@ function appendData() {
             for (var i = 0; i < points.length; i++) {
                 tbodyHTML += "<tr class=\"need-read\">"
 
+                var parts = points[i][sequence["ticker.exchange"]].split(".")
+                var ticker = parts[0]
+                var exchange = exchanges[parts[1]]
                 tbodyHTML += "<td>"
+                tbodyHTML += "<a href=\"http://finance.sina.com.cn/realstock/company/" + exchange + ticker + "/nc.shtml\" target=\"_blank\">"
                 tbodyHTML += points[i][sequence["ticker.exchange"]]
+                tbodyHTML += "</a>"
                 tbodyHTML += "</td>"
 
                 tbodyHTML += "<td>"
@@ -139,10 +161,14 @@ function appendData() {
     }).fail(doLogin)
 }
 
+
+
 function needReadEventBind() {
     $(".need-read").on("click", function(event) {
         event.currentTarget.setAttribute("class", null)
+        refreshUnread()
     })
 }
 
 init()
+setInterval(refreshUnread, 1000)
