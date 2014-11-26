@@ -6,19 +6,19 @@ import time
 
 db = influxdb.InfluxDBClient("10.211.55.4", 8086, "root", "root", "smartstock")
 data = {}
-data["name"] = "alert"
+data["name"] = "alerts"
 data["columns"] = ["ticker.exchange", "dataDate", "dataTime", "criteriaHit"]
 data["points"] = [["", "", "", ""]]
 body = [data]
 
-d = datetime(2014, 11, 25, 23, 33, 0)
+d = datetime(2014, 11, 26, 00, 16, 26)
 n = 600000
 m = 1
 while True:
     data["points"][0][0] = str(n) + ".XSHG"
     data["points"][0][1] = d.strftime("%Y-%m-%d %H:%M:%S").split(" ")[0]
     data["points"][0][2] = d.strftime("%Y-%m-%d %H:%M:%S").split(" ")[1]
-    data["points"][0][3] = "c" + str(m)
+    data["points"][0][3] = ("c" + str(m)) * 1000
     n = n + 1
     if n == 600998:
         n = 600000
