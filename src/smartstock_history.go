@@ -3,20 +3,16 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	. "github.com/dimdin/decimal"
 	. "smartstock/framework"
 	"strings"
 	"time"
 )
 
-const (
-	DECIMALS = 100000
-)
-
 type MktEqud struct {
 	SecID            string  // "secID": "002296.XSHE",
 	TradeDate        string  // "tradeDate": "2014-10-31",
-	SecShortName     string  // "secShortName": "辉煌科技",
 	PreClosePrice    float64 // "preClosePrice": 20.55,
 	ActPreClosePrice float64 // "actPreClosePrice": 20.55,
 	OpenPrice        float64 // "openPrice": 20.55,
@@ -28,7 +24,6 @@ type MktEqud struct {
 	// "dealAmount": 27118,
 	// "turnoverRate": 0.19,
 	// "negMarketValue": 3521188356.05,
-	MarketValuee float64 // "marketValue": 7228036699.8
 }
 
 type MktEqudslice struct {
@@ -62,14 +57,9 @@ type Macd struct {
 	Dea             Dec    // "DEA": "EMA(DIF,9)",
 	Macd            Dec    // "MACD": "(DIF-DEA)*2"
 }
-type IndicatorProc struct {
-	Name string
-	Desc string
-	Calc func([][]interface{}, [][]interface{}) error
-}
 
 // fields of MktEqud must fit
-var MktEqudFields = [10]string{"secShortName", "preClosePrice", "actPreClosePrice", "openPrice", "highestPrice", "lowestPrice", "closePrice", "turnoverVol", "turnoverValue", "marketValue"}
+var MktEqudFields = [8]string{"preClosePrice", "actPreClosePrice", "openPrice", "highestPrice", "lowestPrice", "closePrice", "turnoverVol", "turnoverValue"}
 var BeginDate = "19900101"
 var (
 	columns_mktdata_daily = [...]string{
@@ -90,36 +80,22 @@ var (
 		"time",
 		"ticker.exchange", //"as is",
 		"dataDate",        // "Date of this snapshot from mktdata",
-		"DIF",             // "EMA12-EMA26",
-		"DEA",             // "EMA(DIF,9)",
-		"MACD",            // "(DIF-DEA)*2"
+		"EMAL",
+		"EMAS",
+		"DIF",  // "EMA12-EMA26",
+		"DEA",  // "EMA(DIF,9)",
+		"MACD", // "(DIF-DEA)*2"
 	}
 	debuggonumber = 2
 )
 
 func init() {
 	// StockDatas = make([]Mktdata, STOCKCOUNT)
-	SetProcess(Goproc{loadHistdata, "loadHistdata"})
-	initDB()
+	SetProcess(Goproc{loadHistdata, "Loading History Data..."})
+	DBdropShards([]string{"mktdata_daily", "mktdata", "indicators"})
 }
 
-func initDB() {
-	c := GetNewDbClient()
-	// drop ShardSpace instead of droping series which is mu......ch slower~~~
-	Logger.Println("Clear ShardSpace mktdata_daily")
-	ssps, _ := c.GetShardSpaces()
-	for _, ssp := range ssps {
-		if ssp.Database == DBCONF["database"] {
-			if ssp.Name == "mktdata_daily" ||
-				ssp.Name == "mktdata" ||
-				ssp.Name == "indicators" {
-				c.DropShardSpace(DBCONF["database"], ssp.Name)
-				c.CreateShardSpace(DBCONF["database"], ssp)
-			}
-		}
-	}
-}
-func histdata(sec string) (MktEqudslice, error) {
+func getHistData(sec Stock) (MktEqudslice, error) {
 	var histock MktEqudslice
 	retry := APIMAXRETRY
 	ok := false
@@ -130,7 +106,7 @@ func histdata(sec string) (MktEqudslice, error) {
 			"1.0.0",
 			"getMktEqud.json",
 			[]string{
-				"secID=" + sec,
+				"secID=" + sec.Ticker_exchange,
 				"field=" + strings.Join(MktEqudFields[:], ","),
 				"&beginDate=" + BeginDate,
 			})
@@ -140,13 +116,17 @@ func histdata(sec string) (MktEqudslice, error) {
 		}
 		json.Unmarshal(body, &histock)
 
-		if histock.RetCode == 1 {
-			ok = true
-		} else if histock.RetCode == -1 {
-			ok = true
+		switch histock.RetCode {
+		case -1:
 			Logger.Printf("Fetch OK but no Data %s : %d - %s \n", sec, histock.RetCode, histock.RetMsg)
-		} else {
+			fallthrough
+		case 1:
+			SetStockStatus(sec.Idx, STATUS_RUNNING, "Call DataAPI OK")
+			ok = true
+		default:
+			SetStockStatus(sec.Idx, STATUS_RETRYING, "Call DataAPI Failed Retry ...")
 			retry--
+			time.Sleep(100 * time.Millisecond)
 			Logger.Printf("%s\n", string(body))
 			Logger.Printf("Fetch Failed %s : %d - %s | RetryRemain = %d ..\n", sec, histock.RetCode, histock.RetMsg, retry)
 		}
@@ -197,14 +177,6 @@ func calcMACD(MDSeq []MktdataDaily, Macd []Macd) {
 
 }
 
-func calcPercentage(v1, v2 Dec, scale uint8) Dec {
-	//TODO: zerodiv here
-	pct := *new(Dec).Div(&v1, &v2, scale)
-	pct = *new(Dec).Mul(&pct, New(100))
-	pct.Round(DECIMAL_PCT)
-	return pct
-}
-
 func parseMktData(MktdataDailySeq []MktdataDaily, Mktdata []MktEqud, ticker_exchange string) {
 	for j := range MktdataDailySeq {
 		var (
@@ -217,7 +189,7 @@ func parseMktData(MktdataDailySeq []MktdataDaily, Mktdata []MktEqud, ticker_exch
 		highestPrice.SetFloat64(Mktdata[j].HighestPrice)
 		lowestPrice.SetFloat64(Mktdata[j].LowestPrice)
 		priceChange.Sub(&closePrice, &preClosePrice)
-		priceChangePct = calcPercentage(priceChange, preClosePrice, DECIMAL_PCT+2)
+		priceChangePct = CalcPercentage(priceChange, preClosePrice, DECIMAL_PCT+2)
 		turnoverVol.SetFloat64(Mktdata[j].TurnoverVol)
 		turnoverValue.SetFloat64(Mktdata[j].TurnoverValue)
 		//Mon Jan 2 15:04:05 -0700 MST 2006
@@ -297,23 +269,22 @@ func correctMktData(beforeCorr []MktdataDaily, afterCorr []MktdataDaily,
 		afterCorr[j].lowestPrice = *new(Dec).Mul(&afterCorr[j].lowestPrice, &factors[j]).Round(2)
 
 		afterCorr[j].priceChange.Sub(&closePrice, &preClosePrice)
-		afterCorr[j].priceChangePct = calcPercentage(afterCorr[j].priceChange, preClosePrice, DECIMAL_PCT+2)
+		afterCorr[j].priceChangePct = CalcPercentage(afterCorr[j].priceChange, preClosePrice, DECIMAL_PCT+2)
 	}
 }
-
 func loadHistdata(mds []Stock, ch chan int) {
 	c := GetNewDbClient()
 	for i, _ := range mds {
-		startTime := time.Now()
+		StartProcess(mds[i].Idx)
 		name_mktdata := "mktdata_daily." + mds[i].Ticker_exchange
 		name_corrected := "mktdata_daily_corrected." + mds[i].Ticker_exchange
 		name_macd := "indicators.macd." + mds[i].Ticker_exchange
-		mktdataDaily, err := histdata(mds[i].Ticker_exchange)
+		mktdataDaily, err := getHistData(mds[i])
 		if err != nil {
 			Logger.Panic(err)
 		}
-		if len(mktdataDaily.Data) > 0 {
-			days := len(mktdataDaily.Data)
+		days := len(mktdataDaily.Data)
+		if days > 0 {
 			MktdataDailySeq := make([]MktdataDaily, days)
 			MktdataDailySeq_corrected := make([]MktdataDaily, days)
 			MacdSeq := make([]Macd, days)
@@ -326,12 +297,16 @@ func loadHistdata(mds []Stock, ch chan int) {
 		} else {
 			Logger.Printf("No Data for %s\n", mds[i].Ticker_exchange)
 		}
-		endTime := time.Now()
-		Logger.Printf("%s Done | duration %s | %d to go.\n", mds[i].Ticker_exchange, endTime.Sub(startTime), len(mds)-i-1)
+		duration := time.Now().Sub(mds[i].ProcessStart)
+		Logger.Printf("%s Done | duration %s | %d to go.\n", mds[i].Ticker_exchange, duration, len(mds)-i-1)
+
+		SetStockStatus(mds[i].Idx, STATUS_DONE,
+			fmt.Sprintf("Done %d days calculated, duration %s",
+				days, duration))
 		if DEBUGMODE && i > (debuggonumber-1) {
 			break
 		}
-		mds[i].Done = true
+
 	}
 	ch <- 1
 }
@@ -347,6 +322,8 @@ func Macd2Pnts(MacdSeq []Macd) [][]interface{} {
 			MacdSeq[j].time,
 			MacdSeq[j].ticker_exchange,
 			MacdSeq[j].dataDate,
+			MacdSeq[j].EMAL.Float64(), // "DIF",  // "EMA12-EMA26",
+			MacdSeq[j].EMAS.Float64(), // "DEA",  // "EMA(DIF,9)",
 			MacdSeq[j].Dif.Float64(),  // "DIF",  // "EMA12-EMA26",
 			MacdSeq[j].Dea.Float64(),  // "DEA",  // "EMA(DIF,9)",
 			MacdSeq[j].Macd.Float64(), // "MACD", // "(DIF-DEA)*2"

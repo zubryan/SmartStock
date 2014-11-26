@@ -14,8 +14,10 @@ var (
 )
 
 type Stock struct {
-	SecID  string
-	Ticker string
+	SecID        string
+	Ticker       string
+	ExchangeCD   string
+	ListStatusCD string
 }
 
 type Stockslice struct {
@@ -39,7 +41,7 @@ func main() {
 	STOCKFILE["FILE"], _ = cfg.String("FILE", "stocklist")
 
 	var stock Stockslice
-	req, err := http.NewRequest("GET", APICONF["url"]+"/"+APICONF["master"]+"/"+APICONF["version"]+"/getSecID.json?ticker=ticker&field=secID", nil)
+	req, err := http.NewRequest("GET", APICONF["url"]+"/"+APICONF["master"]+"/"+APICONF["version"]+"/getSecID.json?ticker=ticker&field=secID,listStatusCD,exchangeCD", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -63,7 +65,21 @@ func main() {
 		}
 
 		for _, value := range stock.Data {
-			fout.WriteString(value.SecID + "\n")
+			// ashare stock only
+			if value.ExchangeCD == "XSHG" {
+				if value.Ticker[0] != '6' {
+					continue
+				}
+			}
+			if value.ExchangeCD == "XSHE" {
+				if value.Ticker[0] != '0' && value.Ticker[0] != '3' {
+					continue
+				}
+			}
+			// exclude unlisted stock
+			if value.ListStatusCD == "L" {
+				fout.WriteString(value.SecID + "\n")
+			}
 		}
 	}
 }
