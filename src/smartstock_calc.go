@@ -79,7 +79,6 @@ type Alert struct {
 }
 
 var columns_alert = [...]string{
-	"time",
 	"ticker.exchange",
 	"dataDate",
 	"dataTime",
@@ -97,7 +96,6 @@ type Metrics struct {
 }
 
 var columns_metrics = [...]string{
-	"time",
 	"dataDate",
 	"dataTime",
 	"X1-1",
@@ -141,7 +139,7 @@ func isHitCriteria_2(m *Metrics) bool {
 	var macdx Dec
 	macdx.SetFloat64(0.2)
 	return (*m).X1_1.Cmp(New(2)) > 0 &&
-		(*m).X2.Cmp(New(3)) > 0 &&
+		(*m).X2.Cmp(New(-3)) > 0 &&
 		!(*m).Y1 &&
 		!(*m).Y2 &&
 		(*m).X3.Cmp(&macdx) < 0 &&
@@ -162,14 +160,15 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	ref.isQualified = false
 	ref.isAlertRaised = false
 	ref.lasttime = 0
-
-	datetime, _ := time.Parse("2006-01-02",
-		time.Now().String()[:10])
-	timeInt := datetime.UnixNano() / 1e6
+	// ..........m(_._)m
+	datetime, _ := time.Parse("2006-01-02 MST -0700",
+		time.Now().String()[:10]+" GMT +0800")
+	// ..........m(_._)m
+	timeInt := datetime.UnixNano()
 	ref.lasttime = timeInt
 	c := GetNewDbClient()
 	query := fmt.Sprintf("select dataDate,closePrice,volume "+
-		"from mktdata_daily_corrected.%s limit 19 order desc", ticker)
+		"from mktdata_daily_corrected.%s where time < %d limit 19 order desc", ticker, timeInt)
 	series, err := c.Query(query)
 	if err != nil {
 		SetStockStatus(Idx, STATUS_ERROR, "Call DB ERROR: "+err.Error())
@@ -498,7 +497,7 @@ func HaveAlerts(Idx int) bool {
 	if !ok {
 		Logger.Panic("No lasttime")
 	}
-	(*pRef).lasttime = int64(f) * 1e6
+	(*pRef).lasttime = int64(f)
 	for _, p := range points {
 		m := &(*pRef).Metrics
 		var volume, lstprice, prcChg float64
@@ -637,17 +636,19 @@ func Alert2Pnts(Idx int, alerts []Alert) [][]interface{} {
 	var pRef = &Ref[Idx]
 	var points [][]interface{}
 	points = make([][]interface{}, len(alerts))
-	datetime, _ := time.Parse("2006-01-02 15:04:05",
-		(*pRef).dataDate+" "+(*pRef).dataTime)
-	timeInt := datetime.UnixNano() / 1e6
+	// datetime, _ := time.Parse("2006-01-02 15:04:05",
+	// 	(*pRef).dataDate+" "+(*pRef).dataTime)
+	// var timeInt int64 = datetime.UnixNano() / 1e6
 	for i := range alerts {
 		points[i] = []interface{}{
-			timeInt,
 			(*pRef).ticker_exchange,
 			(*pRef).dataDate,
 			(*pRef).dataTime,
 			alerts[i].criteriaHit,
 		}
+	}
+	if DEBUGMODE {
+		Logger.Println("AlertP:", points)
 	}
 	return points
 }
@@ -655,15 +656,14 @@ func Metrics2Pnts(Idx int, metrics []Metrics) [][]interface{} {
 	var pRef = &Ref[Idx]
 	var points [][]interface{}
 	points = make([][]interface{}, len(metrics))
-	datetime, _ := time.Parse("2006-01-02 15:04:05",
-		(*pRef).dataDate+" "+(*pRef).dataTime)
-	timeInt := datetime.UnixNano() / 1e6
+	// datetime, _ := time.Parse("2006-01-02 15:04:05",
+	// 	(*pRef).dataDate+" "+(*pRef).dataTime)
+	// var timeInt int64 = datetime.UnixNano() / 1e6
 	if DEBUGMODE {
 		Logger.Println(metrics)
 	}
 	for i := range metrics {
 		points[i] = []interface{}{
-			timeInt,
 			(*pRef).dataDate,
 			(*pRef).dataTime,
 			metrics[i].X1_1.Float64(), // X1_1 Dec  // "X1-1", Volume Ratio 5d
@@ -676,7 +676,7 @@ func Metrics2Pnts(Idx int, metrics []Metrics) [][]interface{} {
 		}
 	}
 	if DEBUGMODE {
-		Logger.Println(points)
+		Logger.Println("Metric:", points)
 	}
 	return points
 }

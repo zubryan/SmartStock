@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	. "github.com/dimdin/decimal"
 	"github.com/influxdb/influxdb/client"
 	"strings"
@@ -35,6 +36,8 @@ type TickRTSnapshotSlice struct {
 }
 
 var TickRTSnapshotFields = [12]string{"dataDate", "dataTime", "shortNM", "currencyCD", "prevClosePrice", "openPrice", "volume", "value", "deal", "highPrice", "lowPrice", "lastPrice"}
+var lasttimes []string
+var recCount []int
 
 const (
 	timetoSleep = time.Second
@@ -44,7 +47,10 @@ func init() {
 	if !DEBUGMODE {
 		SetGoInf()
 	}
+	lasttimes = make([]string, STOCKCOUNT)
+	recCount = make([]int, STOCKCOUNT)
 	SetProcess(Goproc{process, "Get TickRTSnapshot"})
+	DBdropShards([]string{"mktdata"})
 }
 
 func process(mds []Stock, ch chan int) {
@@ -112,6 +118,12 @@ func process(mds []Stock, ch chan int) {
 			ticker_exchange := tickRTSnapshotSlice.Data[j].Ticker + "." + tickRTSnapshotSlice.Data[j].ExchangeCD
 
 			idx, ok := idxMap[ticker_exchange]
+			if lasttimes[idx] == tickRTSnapshotSlice.Data[j].DataDate+tickRTSnapshotSlice.Data[j].DataTime {
+
+				// prevent duplicate data
+				SetStockStatus(idx, STATUS_DONE, fmt.Sprintf("%d Record(s)", recCount[idx]))
+				continue
+			}
 			if !ok {
 				Logger.Println("invalid ticker received:", ticker_exchange)
 				continue //impossible?
@@ -157,9 +169,11 @@ func process(mds []Stock, ch chan int) {
 				Logger.Println(err)
 				SetStockStatus(idx, STATUS_ERROR, "ERROR writing to db...")
 			} else {
-				SetStockStatus(idx, STATUS_DONE, "Standby...")
+				recCount[idx]++
+				SetStockStatus(idx, STATUS_DONE, fmt.Sprintf("%d Record(s)", recCount[idx]))
 			}
-
+			// prevent duplicate data
+			lasttimes[idx] = tickRTSnapshotSlice.Data[j].DataDate + tickRTSnapshotSlice.Data[j].DataTime
 		}
 
 		for i := range mds {
