@@ -145,7 +145,8 @@ func calcMACD(MDSeq []MktdataDaily, Macd []Macd) {
 		periodD int64 = 9
 	)
 	for i := range MDSeq {
-		datetime, _ := time.Parse("2006-01-02", MDSeq[i].dataDate)
+		datetime, _ := time.Parse("2006-01-02 15:04:05 MST -0700",
+			MDSeq[i].dataDate+" 15:00:00 GMT +0800")
 		Macd[i].time = datetime.UnixNano() / 1e6
 		Macd[i].ticker_exchange = MDSeq[i].ticker_exchange
 		Macd[i].dataDate = MDSeq[i].dataDate // "dataDate",
@@ -193,7 +194,8 @@ func parseMktData(MktdataDailySeq []MktdataDaily, Mktdata []MktEqud, ticker_exch
 		turnoverVol.SetFloat64(Mktdata[j].TurnoverVol)
 		turnoverValue.SetFloat64(Mktdata[j].TurnoverValue)
 		//Mon Jan 2 15:04:05 -0700 MST 2006
-		datetime, _ := time.Parse("2006-01-02", Mktdata[j].TradeDate)
+		datetime, _ := time.Parse("2006-01-02 15:04:05 MST -0700",
+			Mktdata[j].TradeDate+" 15:00:00 GMT +0800")
 
 		MktdataDailySeq[j].time = datetime.UnixNano() / 1e6
 		MktdataDailySeq[j].ticker_exchange = ticker_exchange // "ticker.exchange",
@@ -238,7 +240,9 @@ func correctMktData(beforeCorr []MktdataDaily, afterCorr []MktdataDaily,
 		//suspention
 		if Mktdata[j].OpenPrice == 0 {
 			var preClosePrice Dec
-			datetime, _ := time.Parse("2006-01-02", Mktdata[j].TradeDate)
+
+			datetime, _ := time.Parse("2006-01-02 15:04:05 MST -0700",
+				Mktdata[j].TradeDate+" 15:00:00 GMT +0800")
 			preClosePrice.SetFloat64(Mktdata[j].PreClosePrice)
 			afterCorr[j].time = datetime.UnixNano() / 1e6
 			afterCorr[j].ticker_exchange = ticker_exchange // "ticker.exchange",
@@ -329,6 +333,9 @@ func Macd2Pnts(MacdSeq []Macd) [][]interface{} {
 			MacdSeq[j].Macd.Float64(), // "MACD", // "(DIF-DEA)*2"
 		}
 	}
+	if DEBUGMODE {
+		Logger.Println("MacdP:", points)
+	}
 	return points
 }
 func MktdataDaily2Pnts(MktdataDailySeq []MktdataDaily) [][]interface{} {
@@ -352,6 +359,9 @@ func MktdataDaily2Pnts(MktdataDailySeq []MktdataDaily) [][]interface{} {
 			MktdataDailySeq[j].volume.Float64(),
 			MktdataDailySeq[j].ammount.Float64(),
 		}
+	}
+	if DEBUGMODE {
+		Logger.Println("MktdataDailyP:", points)
 	}
 	return points
 }

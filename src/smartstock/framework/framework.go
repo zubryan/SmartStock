@@ -185,10 +185,10 @@ func initDB() {
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata_daily", DBCONF["database"], "/mktdata_daily.*/", "inf", "10000d", 1, 1})
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata", DBCONF["database"], "/mktdata\\..*/", "inf", "7d", 1, 1})
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"metrics", DBCONF["database"], "/metrics\\..*/", "inf", "7d", 1, 1})
-		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"alerts", DBCONF["database"], "/alerts\\..*/", "inf", "10000d", 1, 1})
+		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"alerts", DBCONF["database"], "/alerts/", "inf", "10000d", 1, 1})
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata", DBCONF["database"], "/mktdata\\..*/", "inf", "7d", 1, 1})
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"indicators", DBCONF["database"], "/indicators\\..*/", "inf", "10000d", 1, 1})
-		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"default", DBCONF["database"], "/.*/", "inf", "30d", 1, 1})
+		//	c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"default", DBCONF["database"], "/.*/", "inf", "30d", 1, 1})
 	}
 }
 
@@ -274,9 +274,6 @@ func initStocklist() {
 		md.DataDate = ""
 		md.DataTime = ""
 		md.Idx = idx
-                md.ProcessStart = time.Now()
-                md.Status = STATUS_READY
-	        md.Msg = "Initialized."
 		idx++
 		Mktdatas = append(Mktdatas, md)
 		s, err = r.ReadString('\n')
@@ -480,8 +477,7 @@ func termEvent() {
 				for _, x := range Mktdatas {
 					loggerFW.Println(x)
 				}
-				loggerFW.Println("esc pressed EXIT")
-				time.Sleep(5* time.Second)
+				time.Sleep(time.Second)
 				termbox.Close()
 				os.Exit(0)
 				loggerFW.Panic("Cannot exit Console")
@@ -503,7 +499,6 @@ func Main() {
 		err := termbox.Init()
 		if err != nil {
 			showmonitor = false
-                        fmt.Println("No Monitor or Term Init fail")
 		} else {
 
 			defer termbox.Close()
