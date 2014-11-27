@@ -205,7 +205,7 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 		f, ok := p[idxClosePrice].(float64)
 		if !ok {
 			Logger.Println("invalid prc")
-			SetStockStatus(Idx, STATUS_ERROR, "invalid prc ")
+			SetStockStatus(Idx, STATUS_ERROR, "Invalid ClosePrice ")
 			return ref, errors.New("invalid prc")
 		}
 		ref.closePriceSeq[i].SetFloat64(f)
@@ -232,7 +232,7 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 		f, ok := p[idxVolume].(float64)
 		if !ok {
 			Logger.Println("invalid volume")
-			SetStockStatus(Idx, STATUS_ERROR, "invalid volume ")
+			SetStockStatus(Idx, STATUS_ERROR, "Invalid Volume ")
 			return ref, errors.New("invalid volume")
 		}
 		ref.volSeq[i].SetFloat64(f)
@@ -254,7 +254,7 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	s, ok := points[0][idxDataDate].(string)
 	if !ok {
 		Logger.Println("invalid date")
-		SetStockStatus(Idx, STATUS_ERROR, "invalid date ")
+		SetStockStatus(Idx, STATUS_ERROR, "Invalid Date ")
 		return ref, errors.New("invalid date")
 	}
 
@@ -274,7 +274,7 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	points = series[0].GetPoints()
 	if len(points) == 0 {
 		Logger.Println("Data Error! No MACD")
-		SetStockStatus(Idx, STATUS_ERROR, "Data Error! No MACD")
+		SetStockStatus(Idx, STATUS_ERROR, "\nData Error!\nNo MACD")
 		return ref, errors.New("Data Error! No MACD")
 	}
 
@@ -417,7 +417,7 @@ func calcRealTimeMktData(mds []Stock, ch chan int) {
 						(*pRef).isAlertRaised = true
 						SetStockStatus(idx, STATUS_DONE, "Alert"+(*pRef).AlertMsg)
 					} else {
-						SetStockStatus(idx, STATUS_READY, "Standby LstTime:"+Ref[idx].dataTime)
+						SetStockStatus(idx, STATUS_READY, "Standby\nLstTime:"+Ref[idx].dataTime)
 					}
 				}
 			} else {
@@ -534,7 +534,13 @@ func HaveAlerts(Idx int) bool {
 		for i := range (*pRef).criterias {
 			if (*pRef).criterias[i].isHit(m) {
 				haveAlerts = true
-				genAlert(Idx, &(*pRef).criterias[i], m)
+				genAlert(Idx, &(*pRef).criterias[i], m,
+					[]string{
+						"Prc", prcDec.Round(3).String(),
+						"Vol", volDec.Round(0).String(),
+						"MA5", MA5.Round(3).String(),
+						"MA10", MA10.Round(3).String(),
+						"MA20", MA20.Round(3).String()})
 			}
 		}
 	}
@@ -542,16 +548,20 @@ func HaveAlerts(Idx int) bool {
 	return haveAlerts
 }
 
-func genAlert(Idx int, cri *Criteria, m *Metrics) {
+func genAlert(Idx int, cri *Criteria, m *Metrics, params []string) {
 	var alert Alert
-	alert.criteriaHit = Ref[Idx].shortName + "@" + Ref[Idx].dataTime + " > " + (*cri).name
-	alert.criteriaHit += fmt.Sprintf(" |X1_1:%.3f X1_2:%.3f X2:%.3f X3:%.3f X4:%.3f Y1:%s Y2:%s ",
+	alert.criteriaHit = Ref[Idx].shortName + "\n@" + Ref[Idx].dataTime + ":" + (*cri).name
+	alert.criteriaHit += fmt.Sprintf(" X11:%.2f X12:%.2f X2:%.2f X3:%.3f X4:%.0f Y1:%s Y2:%s ",
 		(*m).X1_1.Float64(),
 		(*m).X1_2.Float64(),
 		(*m).X2.Float64(),
 		(*m).X3.Float64(),
 		(*m).X4.Float64(),
 		fmt.Sprint((*m).Y1), fmt.Sprint((*m).Y2))
+	alert.criteriaHit += "\n"
+	for i := 0; i+1 < len(params); i += 2 {
+		alert.criteriaHit += fmt.Sprintf(" %s:%s", params[i], params[i+1])
+	}
 	Ref[Idx].AlertMsg = alert.criteriaHit
 	c := GetNewDbClient()
 	PutSeries(c, "alerts", columns_alert[:], Alert2Pnts(Idx, []Alert{alert}))
@@ -593,23 +603,26 @@ func TotalMinute() Dec {
 	var v int64
 
 	for i := 0; i < len(TradeTimeWindows)-1; i = i + 2 {
-		t1, _ := time.Parse("15:04", TradeTimeWindows[i])
-		t2, _ := time.Parse("15:04", TradeTimeWindows[i+1])
+		t1, _ := time.Parse("15:04 MST -0700", TradeTimeWindows[i]+" GMT +0800")
+		t2, _ := time.Parse("15:04 MST -0700", TradeTimeWindows[i+1]+" GMT +0800")
 		v += int64(t2.Sub(t1).Minutes())
 	}
 	return *New(v)
 }
 func getMinuteFromOpen(t string) Dec {
 	var v int64
-	tt, _ := time.Parse("15:04:05", t)
+	tt, _ := time.Parse("15:04:05 MST -0700", t+" GMT +0800")
 	if len(TradeTimeWindows) < 2 {
 		return *New(0)
 	}
-	tEndTrd, _ := time.Parse("15:04", TradeTimeWindows[len(TradeTimeWindows)-1])
-	if tt.Before(tEndTrd) {
+	tBgnTrd, _ := time.Parse("15:04 MST -0700", TradeTimeWindows[0]+" GMT +0800")
+	tEndTrd, _ := time.Parse("15:04 MST -0700", TradeTimeWindows[len(TradeTimeWindows)-1]+" GMT +0800")
+	if tt.Before(tBgnTrd) {
+		return *New(0)
+	} else if tt.Before(tEndTrd) {
 		for i := 0; i < len(TradeTimeWindows)-1; i = i + 2 {
-			t1, _ := time.Parse("15:04", TradeTimeWindows[i])
-			t2, _ := time.Parse("15:04", TradeTimeWindows[i+1])
+			t1, _ := time.Parse("15:04 MST -0700", TradeTimeWindows[i]+" GMT +0800")
+			t2, _ := time.Parse("15:04 MST -0700", TradeTimeWindows[i+1]+" GMT +0800")
 			if tt.Equal(t1) {
 				v++
 				break
@@ -682,5 +695,6 @@ func Metrics2Pnts(Idx int, metrics []Metrics) [][]interface{} {
 }
 
 func main() {
+
 	Main()
 }

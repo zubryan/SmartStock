@@ -157,8 +157,12 @@ func TestCmp(t *testing.T) {
 		{"-0.01", "0.01", -1},
 		{"0.01", "0.01", 0},
 		{"0.10", "-0.10", 1},
+		{"0.10", "-3", 1},
+		{"2.12", "-3.1", 1},
 		{"0.1", "0.01", 1},
 		{"0.01", "0.1", -1},
+		{"-0.1", "0.01", -1},
+		{"-0.01", "0.1", -1},
 	}
 	for _, a := range values {
 		var x, y Dec
@@ -166,7 +170,19 @@ func TestCmp(t *testing.T) {
 		y.SetString(a.y)
 		c := x.Cmp(&y)
 		if c != a.c {
-			t.Errorf("cmp %s <> %s got %d want %d", a.x, a.y, c, a.c)
+			var z, zz, zzz, v, vv Int128
+			z.SetInt64(-100)
+			zz.SetInt64(100)
+			v.Abs(&z)
+			vv.Abs(&zz)
+			t.Errorf(" s:%s ss:%s", z.Sign(), zz.Sign())
+			mul(&v, &v, &zzz)
+			t.Errorf(" s:%s ss:%s", z.Sign(), zz.Sign())
+			z.Mul(&z, &zz)
+			t.Errorf(" s:%s ss:%s", z.Sign(), zz.Sign())
+			zzz.Neg(&zzz)
+			t.Errorf(" s:%s ss:%s", z.Sign(), zz.Sign())
+			t.Errorf("cmp %s <> %s got %d want %d   z:%s zzz:%s", a.x, a.y, c, a.c, z.String(), zzz.String())
 		}
 	}
 }
@@ -241,6 +257,7 @@ func TestMul(t *testing.T) {
 		{"-1.2", "2", "-2.4"},
 		{"-1.2", "-2", "2.4"},
 		{"-1.2", "10", "-12.0"},
+		{"-1.2", "10.11", "-12.132"},
 	}
 	for _, a := range values {
 		var x, y, z Dec
