@@ -8,6 +8,7 @@ import (
 	. "github.com/dimdin/decimal"
 	"github.com/influxdb/influxdb/client"
 	"github.com/larspensjo/config"
+	"github.com/mattn/go-runewidth"
 	"github.com/nsf/termbox-go"
 	"io/ioutil"
 	"log"
@@ -287,10 +288,7 @@ func tbprint(x, y int, fg, bg termbox.Attribute, msg string) {
 	for _, c := range msg {
 
 		termbox.SetCell(x, y, c, fg, bg)
-		x++
-		if c > 128 {
-			x++ //utf8?
-		}
+		x += runewidth.NewCondition().RuneWidth(c)
 	}
 }
 
@@ -326,8 +324,10 @@ func redraw(cntlast int, debugflag string, startTime time.Time, fin_flag bool) i
 		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, emptyline)
 		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, msg[:termwidth])
 		r++
+		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, emptyline)
 		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, msg[termwidth:2*termwidth])
 		r++
+		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, emptyline)
 		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, msg[2*termwidth:3*termwidth])
 	} else {
 		tbprint(0, r, termbox.ColorWhite, termbox.ColorBlack, emptyline)

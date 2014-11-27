@@ -172,7 +172,9 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	series, err := c.Query(query)
 	if err != nil {
 		SetStockStatus(Idx, STATUS_ERROR, "Call DB ERROR: "+err.Error())
-		Logger.Panic(err)
+		//Logger.Panic(err)
+		Logger.Println(query + "\nNo Data")
+		return ref, errors.New("No Data")
 	}
 	if len(series) == 0 {
 		Logger.Println(query + "\nNo Data")
@@ -366,38 +368,45 @@ func loadRefData(mds []Stock, ch chan int) {
 	var err error
 	var res MktEqudRefslice
 	for i := range mds {
+
+		if DEBUGMODE && i >= 2 {
+			//Logger.Println(*pRef)
+			break
+		}
 		Idx := mds[i].Idx
 		StartProcess(Idx)
 		var pRef *Refdata = &Ref[Idx]
 		*pRef, err = getRefdataDB(mds[i].Ticker_exchange, Idx)
 		if err != nil {
-			Logger.Panic(err)
+			Logger.Println(err)
+			SetStockStatus(Idx, STATUS_ERROR, "Not enough data!")
+			continue
 		}
-		res, err = getRefdataDataAPI(mds[i].Ticker_exchange, Idx, (*pRef).lastTradeDate)
+		res, err = getRefdataDataAPI(mds[i].Ticker_exchange, Idx, pRef.lastTradeDate)
 		if err != nil {
-			Logger.Panic(err)
+			Logger.Println(err)
+			SetStockStatus(Idx, STATUS_ERROR, "Not enough data!")
+			continue
 		}
 		if len(res.Data) == 0 {
-			Logger.Panic("No data from API")
+			Logger.Println("No data from API")
+			SetStockStatus(Idx, STATUS_ERROR, "Not enough data!")
+			continue
 		}
-		(*pRef).currency = res.Data[0].TransCurrCD
-		(*pRef).shortName = res.Data[0].SecShortName
+		pRef.currency = res.Data[0].TransCurrCD
+		pRef.shortName = res.Data[0].SecShortName
 		var NegMv, preClose Dec
 		NegMv.SetFloat64(res.Data[0].NegMarketValue)
-		if (*pRef).closePriceSeq[0].Cmp(New(0)) > 0 {
-			preClose = (*pRef).closePriceSeq[0]
-			(*pRef).tradableQty = *new(Dec).Div(&NegMv, &preClose, 0)
+		if pRef.closePriceSeq[0].Cmp(New(0)) > 0 {
+			preClose = pRef.closePriceSeq[0]
+			pRef.tradableQty = *new(Dec).Div(&NegMv, &preClose, 0)
 		} else {
-			(*pRef).isQualified = false
+			pRef.isQualified = false
 		}
-		if (*pRef).isQualified {
+		if pRef.isQualified {
 			SetStockStatus(Idx, STATUS_DONE, "GetRef OK.")
 		} else {
 			SetStockStatus(Idx, STATUS_ERROR, "Not enough data!")
-		}
-		if DEBUGMODE && i == 2 {
-			Logger.Println(*pRef)
-			break
 		}
 
 	}
@@ -408,24 +417,23 @@ func calcRealTimeMktData(mds []Stock, ch chan int) {
 	// c := GetNewDbClient()
 	for {
 		for i := range mds {
+			if DEBUGMODE && i >= 2 {
+				Logger.Printf("OK.  \n")
+				break
+			}
 			var idx = mds[i].Idx
 			var pRef = &Ref[idx]
-			if (*pRef).isQualified {
-				if !(*pRef).isAlertRaised {
+			if pRef.isQualified {
+				if !pRef.isAlertRaised {
 					StartProcess(idx)
 					if HaveAlerts(idx) {
-						(*pRef).isAlertRaised = true
-						SetStockStatus(idx, STATUS_DONE, "Alert"+(*pRef).AlertMsg)
+						SetStockStatus(idx, STATUS_DONE, "Alert"+pRef.AlertMsg)
 					} else {
 						SetStockStatus(idx, STATUS_READY, "Standby\nLstTime:"+Ref[idx].dataTime)
 					}
 				}
 			} else {
 				SetStockStatus(idx, STATUS_ERROR, "Not enough data!")
-			}
-			if DEBUGMODE && i == 2 {
-				Logger.Printf("OK.  \n")
-				break
 			}
 		}
 		// if DEBUGMODE {
@@ -441,7 +449,7 @@ func HaveAlerts(Idx int) bool {
 	var haveAlerts bool = false
 	c := GetNewDbClient()
 	query := fmt.Sprintf("select dataDate,dataTime,lastPrice,price_change_percentage,volume "+
-		"from mktdata.%s where time > %d", (*pRef).ticker_exchange, (*pRef).lasttime)
+		"from mktdata.%s where time > %d", pRef.ticker_exchange, pRef.lasttime)
 
 	if DEBUGMODE {
 		Logger.Println(query)
@@ -451,7 +459,7 @@ func HaveAlerts(Idx int) bool {
 		Logger.Println(err)
 	}
 	if len(series) == 0 {
-		Logger.Printf("%s No data", (*pRef).ticker_exchange)
+		Logger.Printf("%s No data", pRef.ticker_exchange)
 		return false
 	}
 
@@ -461,7 +469,7 @@ func HaveAlerts(Idx int) bool {
 		Logger.Println(len(points), " records Read")
 	}
 	if len(points) == 0 {
-		Logger.Printf("%s No data", (*pRef).ticker_exchange)
+		Logger.Printf("%s No data", pRef.ticker_exchange)
 		return false
 	}
 
@@ -497,54 +505,57 @@ func HaveAlerts(Idx int) bool {
 	if !ok {
 		Logger.Panic("No lasttime")
 	}
-	(*pRef).lasttime = int64(f)
+	pRef.lasttime = int64(f)
+loopMktdata:
 	for _, p := range points {
-		m := &(*pRef).Metrics
+		m := &pRef.Metrics
 		var volume, lstprice, prcChg float64
 		var volDec, prcDec Dec
-		(*pRef).dataTime, _ = p[idxdataTime].(string)
-		(*pRef).dataDate, _ = p[idxdataDate].(string)
+		pRef.dataTime, _ = p[idxdataTime].(string)
+		pRef.dataDate, _ = p[idxdataDate].(string)
 		volume, _ = p[idxVol].(float64)
 		lstprice, _ = p[idxlastPrice].(float64)
 		prcChg, _ = p[idxPriceChgPct].(float64)
 		volDec.SetFloat64(volume)
-		MinuteFromOpen := getMinuteFromOpen((*pRef).dataTime)
-		(*m).X1_1 = calcX1_1(&volDec, &(*pRef).volsum5, &MinuteFromOpen, &TotalMinute)
-		(*m).X1_2 = calcX1_2(&volDec, &(*pRef).volsum10, &MinuteFromOpen, &TotalMinute)
+		MinuteFromOpen := getMinuteFromOpen(pRef.dataTime)
+		(*m).X1_1 = calcX1_1(&volDec, &pRef.volsum5, &MinuteFromOpen, &TotalMinute)
+		(*m).X1_2 = calcX1_2(&volDec, &pRef.volsum10, &MinuteFromOpen, &TotalMinute)
 
 		(*m).X2.SetFloat64(prcChg)
 
 		prcDec.SetFloat64(lstprice)
-		MA5 := *new(Dec).Div(new(Dec).Add(&prcDec, &(*pRef).cpsum4), New(5), DECIMAL_PRC)
-		MA10 := *new(Dec).Div(new(Dec).Add(&prcDec, &(*pRef).cpsum9), New(10), DECIMAL_PRC)
-		MA20 := *new(Dec).Div(new(Dec).Add(&prcDec, &(*pRef).cpsum19), New(20), DECIMAL_PRC)
+		MA5 := *new(Dec).Div(new(Dec).Add(&prcDec, &pRef.cpsum4), New(5), DECIMAL_PRC)
+		MA10 := *new(Dec).Div(new(Dec).Add(&prcDec, &pRef.cpsum9), New(10), DECIMAL_PRC)
+		MA20 := *new(Dec).Div(new(Dec).Add(&prcDec, &pRef.cpsum19), New(20), DECIMAL_PRC)
 		(*m).Y1 = MA5.Cmp(&MA10) <= 0 && MA10.Cmp(&MA20) >= 0
 		(*m).Y1 = MA5.Cmp(&MA10) <= 0 && MA10.Cmp(&MA20) <= 0
 		(*m).X3 = calcX3(&prcDec,
-			&(*pRef).prevEMAS,
-			&(*pRef).prevEMAL,
-			&(*pRef).prevDEA)
+			&pRef.prevEMAS,
+			&pRef.prevEMAL,
+			&pRef.prevDEA)
 		prcDec.SetFloat64(lstprice)
-		(*m).X4 = *new(Dec).Div(new(Dec).Mul(&prcDec, &(*pRef).tradableQty), New(10000), 0)
-		// m.X1_1 = new(Dec).Add(&volDec,&(*pRef).)
+		(*m).X4 = *new(Dec).Div(new(Dec).Mul(&prcDec, &pRef.tradableQty), New(10000), 0)
+		// m.X1_1 = new(Dec).Add(&volDec,&pRef.)
 
 		c := GetNewDbClient()
-		PutSeries(c, "metrics."+(*pRef).ticker_exchange, columns_metrics[:],
-			Metrics2Pnts(Idx, []Metrics{(*pRef).Metrics}))
-		for i := range (*pRef).criterias {
-			if (*pRef).criterias[i].isHit(m) {
-				haveAlerts = true
-				genAlert(Idx, &(*pRef).criterias[i], m,
+		PutSeries(c, "metrics."+pRef.ticker_exchange, columns_metrics[:],
+			Metrics2Pnts(Idx, []Metrics{pRef.Metrics}))
+		for i := range pRef.criterias {
+			if pRef.criterias[i].isHit(m) {
+				genAlert(Idx, &pRef.criterias[i], m,
 					[]string{
 						"Prc", prcDec.Round(3).String(),
 						"Vol", volDec.Round(0).String(),
 						"MA5", MA5.Round(3).String(),
 						"MA10", MA10.Round(3).String(),
 						"MA20", MA20.Round(3).String()})
+				haveAlerts = true
+				pRef.isAlertRaised = true
+				break loopMktdata
 			}
 		}
 	}
-	// (*pRef).lasttime =
+	// pRef.lasttime =
 	return haveAlerts
 }
 
@@ -650,13 +661,13 @@ func Alert2Pnts(Idx int, alerts []Alert) [][]interface{} {
 	var points [][]interface{}
 	points = make([][]interface{}, len(alerts))
 	// datetime, _ := time.Parse("2006-01-02 15:04:05",
-	// 	(*pRef).dataDate+" "+(*pRef).dataTime)
+	// 	pRef.dataDate+" "+pRef.dataTime)
 	// var timeInt int64 = datetime.UnixNano() / 1e6
 	for i := range alerts {
 		points[i] = []interface{}{
-			(*pRef).ticker_exchange,
-			(*pRef).dataDate,
-			(*pRef).dataTime,
+			pRef.ticker_exchange,
+			pRef.dataDate,
+			pRef.dataTime,
 			alerts[i].criteriaHit,
 		}
 	}
@@ -670,15 +681,15 @@ func Metrics2Pnts(Idx int, metrics []Metrics) [][]interface{} {
 	var points [][]interface{}
 	points = make([][]interface{}, len(metrics))
 	// datetime, _ := time.Parse("2006-01-02 15:04:05",
-	// 	(*pRef).dataDate+" "+(*pRef).dataTime)
+	// 	pRef.dataDate+" "+pRef.dataTime)
 	// var timeInt int64 = datetime.UnixNano() / 1e6
 	if DEBUGMODE {
 		Logger.Println(metrics)
 	}
 	for i := range metrics {
 		points[i] = []interface{}{
-			(*pRef).dataDate,
-			(*pRef).dataTime,
+			pRef.dataDate,
+			pRef.dataTime,
 			metrics[i].X1_1.Float64(), // X1_1 Dec  // "X1-1", Volume Ratio 5d
 			metrics[i].X1_2.Float64(), // X1_2 Dec  // "X1-2", Volume Ratio 10d
 			metrics[i].X2.Float64(),   // X2   Dec  // "X2", PrcChgPct
