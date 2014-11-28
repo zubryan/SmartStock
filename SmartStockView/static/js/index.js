@@ -74,6 +74,7 @@ function initHeader(){
 function initAlert() {
     $.getJSON("/alert/a/" + today() + "/00:00:00", function(data) {
         $("#content").show()
+        $("header").show()
         $("#login").hide()
         lastTime = "00:00:00"
         if (data.length > 0) {
