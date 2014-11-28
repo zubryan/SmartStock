@@ -88,7 +88,7 @@ def logout():
         if session.has_key('user'):
             del session['user']
         logging.info('Logout')
-        return json.dumps({'logout' : 'true'})
+        return redirect("/")
     except:
         traceback.print_exc()
         print 'Logout error'
@@ -149,4 +149,4 @@ if __name__ == '__main__':
     # Loop server
     print 'Run server'
     logging.info('Run server')
-    app.run(debug=True)
+    app.run(debug=False)
