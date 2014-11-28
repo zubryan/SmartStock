@@ -153,7 +153,8 @@ func init() {
 	}
 	SetProcess(Goproc{loadRefData, "Loading RefData..."})
 	SetProcess(Goproc{calcRealTimeMktData, "Continuously Monitor the Markets ..."})
-	DBdropShards([]string{"metrics", "alerts"})
+	//DBdropShards([]string{"metrics", "alerts"})
+	DBdropShards([]string{"metrics"})
 }
 func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	var ref Refdata
@@ -166,7 +167,7 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	// ..........m(_._)m
 	timeInt := datetime.UnixNano()
 	ref.lasttime = timeInt
-	c := GetNewDbClient()
+
 	query := fmt.Sprintf("select dataDate,closePrice,volume "+
 		"from mktdata_daily_corrected.%s where time < %d limit 19 order desc", ticker, timeInt)
 	series, err := c.Query(query)
@@ -363,6 +364,8 @@ func getRefdataDataAPI(ticker string, Idx int, date string) (MktEqudRefslice, er
 	return refdata, nil
 }
 
+var c = GetNewDbClient()
+
 func loadRefData(mds []Stock, ch chan int) {
 	// c := GetNewDbClient()
 	var err error
@@ -447,7 +450,7 @@ func calcRealTimeMktData(mds []Stock, ch chan int) {
 func HaveAlerts(Idx int) bool {
 	var pRef = &Ref[Idx]
 	var haveAlerts bool = false
-	c := GetNewDbClient()
+
 	query := fmt.Sprintf("select dataDate,dataTime,lastPrice,price_change_percentage,volume "+
 		"from mktdata.%s where time > %d", pRef.ticker_exchange, pRef.lasttime)
 
@@ -505,8 +508,9 @@ func HaveAlerts(Idx int) bool {
 	if !ok {
 		Logger.Panic("No lasttime")
 	}
-	pRef.lasttime = int64(f)
+	pRef.lasttime = int64(f) * 1e6
 loopMktdata:
+
 	for _, p := range points {
 		m := &pRef.Metrics
 		var volume, lstprice, prcChg float64
@@ -535,11 +539,9 @@ loopMktdata:
 			&pRef.prevDEA)
 		prcDec.SetFloat64(lstprice)
 		(*m).X4 = *new(Dec).Div(new(Dec).Mul(&prcDec, &pRef.tradableQty), New(10000), 0)
-		// m.X1_1 = new(Dec).Add(&volDec,&pRef.)
 
-		c := GetNewDbClient()
-		PutSeries(c, "metrics."+pRef.ticker_exchange, columns_metrics[:],
-			Metrics2Pnts(Idx, []Metrics{pRef.Metrics}))
+		// PutSeries(c, "metrics."+pRef.ticker_exchange, columns_metrics[:],
+		// 	Metrics2Pnts(Idx, []Metrics{pRef.Metrics}))
 		for i := range pRef.criterias {
 			if pRef.criterias[i].isHit(m) {
 				genAlert(Idx, &pRef.criterias[i], m,
@@ -574,7 +576,7 @@ func genAlert(Idx int, cri *Criteria, m *Metrics, params []string) {
 		alert.criteriaHit += fmt.Sprintf(" %s:%s", params[i], params[i+1])
 	}
 	Ref[Idx].AlertMsg = alert.criteriaHit
-	c := GetNewDbClient()
+
 	PutSeries(c, "alerts", columns_alert[:], Alert2Pnts(Idx, []Alert{alert}))
 }
 

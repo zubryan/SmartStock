@@ -70,11 +70,12 @@ func main() {
 				if value.Ticker[0] != '6' {
 					continue
 				}
-			}
-			if value.ExchangeCD == "XSHE" {
+			} else if value.ExchangeCD == "XSHE" {
 				if value.Ticker[0] != '0' && value.Ticker[0] != '3' {
 					continue
 				}
+			} else {
+				continue
 			}
 			// exclude unlisted stock
 			if value.ListStatusCD == "L" {
