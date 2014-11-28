@@ -16,11 +16,16 @@ function today() {
 function refreshUnread(){
     var unreadCount = $(".need-read").length
     $("#unread-count").html(unreadCount)
-    document.title = "您有" + unreadCount + "条未读提醒"
+    if(unreadCount > 0){
+        document.title = "您有" + unreadCount + "条未读提醒"
+    } else {
+        document.title = "围数资本SmartStock"
+    }
 }
 
 function doLogin() {
     $("#content").hide()
+    $("header").hide()
     $("#login").show()
 }
 
@@ -32,7 +37,7 @@ $("#loginForm").on("submit", function(event) {
         if (data["login_result"]) {
             initAlert()
         } else {
-            alert("登录失败")
+            alert("用户名/密码错误")
         }
     })
     return false
@@ -55,6 +60,17 @@ function initReport() {
 
 }
 
+function initHeader(){
+    var thead = $("#alertTable thead")
+    var theadHTML = "<tr>"
+    theadHTML += "<th width=\"140px\">股票代码.交易行</th>"
+    theadHTML += "<th width=\"100px\">选股日期</th>"
+    theadHTML += "<th width=\"100px\">选股时间</th>"
+    theadHTML += "<th>选股规则</th>"
+    theadHTML += "</tr>"
+    thead.html(theadHTML)
+}
+
 function initAlert() {
     $.getJSON("/alert/a/" + today() + "/00:00:00", function(data) {
         $("#content").show()
@@ -63,14 +79,10 @@ function initAlert() {
         if (data.length > 0) {
             var columns = data[0]["columns"]
             var points = data[0]["points"]
-            var thead = $("#alertTable thead")
-            var theadHTML = "<tr>"
-            theadHTML += "<th width=\"140px\">ticker.exchange</th>"
-            theadHTML += "<th width=\"100px\">dataDate</th>"
-            theadHTML += "<th width=\"100px\">dataTime</th>"
-            theadHTML += "<th>criteriaHit</th>"
-            theadHTML += "</tr>"
-            thead.html(theadHTML)
+
+            if($("#alertTable thead").html() === ""){
+                initHeader()
+            }
 
             for (var i = 0; i < columns.length; i++) {
                 sequence[columns[i]] = i
@@ -117,6 +129,11 @@ function appendData() {
         if (data.length > 0) {
             var columns = data[0]["columns"]
             var points = data[0]["points"]
+
+            if($("#alertTable thead").html() === ""){
+                initHeader()
+            }
+
             for (var i = 0; i < columns.length; i++) {
                 sequence[columns[i]] = i
             }
