@@ -325,12 +325,21 @@ func getRefdataDataAPI(ticker string, Idx int, date string) (MktEqudRefslice, er
 	var refdata MktEqudRefslice
 	retry := APIMAXRETRY
 	ok := false
+	//1 for success , -1 for no data , other retry
+	api := "getMktEqud.json"
+	ts := strings.Split(ticker, ".")
+
+	if len(ts) > 1 {
+		if ts[1] == "XHKG" {
+			api = "getMktHKEqud.json"
+		}
+	}
 	date = strings.Join(strings.Split(date, "-"), "")
 	for !ok && retry > 0 {
 		body, err := CallDataAPI(
 			"market",
 			"1.0.0",
-			"getMktEqud.json",
+			api,
 			[]string{
 				"secID=" + ticker,
 				"field=" + strings.Join(MktEqudRefFields[:], ","),
@@ -382,18 +391,18 @@ func loadRefData(mds []Stock, ch chan int) {
 		*pRef, err = getRefdataDB(mds[i].Ticker_exchange, Idx)
 		if err != nil {
 			Logger.Println(err)
-			SetStockStatus(Idx, STATUS_ERROR, "Not enough data!")
+			SetStockStatus(Idx, STATUS_ERROR, "Not enough data! getRefdataDB")
 			continue
 		}
 		res, err = getRefdataDataAPI(mds[i].Ticker_exchange, Idx, pRef.lastTradeDate)
 		if err != nil {
 			Logger.Println(err)
-			SetStockStatus(Idx, STATUS_ERROR, "Not enough data!")
+			SetStockStatus(Idx, STATUS_ERROR, "Not enough data! getRefdataDataAPI")
 			continue
 		}
 		if len(res.Data) == 0 {
 			Logger.Println("No data from API")
-			SetStockStatus(Idx, STATUS_ERROR, "Not enough data!")
+			SetStockStatus(Idx, STATUS_ERROR, "Not enough data! No data from getRefdataDataAPI")
 			continue
 		}
 		pRef.currency = res.Data[0].TransCurrCD
@@ -409,7 +418,7 @@ func loadRefData(mds []Stock, ch chan int) {
 		if pRef.isQualified {
 			SetStockStatus(Idx, STATUS_DONE, "GetRef OK.")
 		} else {
-			SetStockStatus(Idx, STATUS_ERROR, "Not enough data!")
+			SetStockStatus(Idx, STATUS_ERROR, "Not enough data! no PrevClose")
 		}
 
 	}
