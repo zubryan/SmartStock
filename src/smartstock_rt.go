@@ -121,7 +121,7 @@ func process(mds []Stock, ch chan int) {
 			if lasttimes[idx] == tickRTSnapshotSlice.Data[j].DataDate+tickRTSnapshotSlice.Data[j].DataTime {
 
 				// prevent duplicate data
-				SetStockStatus(idx, STATUS_DONE, fmt.Sprintf("%d Record(s)", recCount[idx]))
+				SetStockStatus(idx, STATUS_DONE, fmt.Sprintf("%d Record(s)\nLast Updated: %s", recCount[idx], lasttimes[idx]))
 				continue
 			}
 			if !ok {
@@ -167,13 +167,13 @@ func process(mds []Stock, ch chan int) {
 			err = c.WriteSeries([]*client.Series{series})
 			if err != nil {
 				Logger.Println(err)
-				SetStockStatus(idx, STATUS_ERROR, "ERROR writing to db...")
+				SetStockStatus(idx, STATUS_ERROR, "ERROR writing to db...\n"+err.Error())
 			} else {
 				recCount[idx]++
-				SetStockStatus(idx, STATUS_DONE, fmt.Sprintf("%d Record(s)", recCount[idx]))
+				SetStockStatus(idx, STATUS_DONE, fmt.Sprintf("%d Record(s)\nLast Updated: %s", recCount[idx], lasttimes[idx]))
+				// prevent duplicate data
+				lasttimes[idx] = tickRTSnapshotSlice.Data[j].DataDate + tickRTSnapshotSlice.Data[j].DataTime
 			}
-			// prevent duplicate data
-			lasttimes[idx] = tickRTSnapshotSlice.Data[j].DataDate + tickRTSnapshotSlice.Data[j].DataTime
 		}
 
 		for i := range mds {
