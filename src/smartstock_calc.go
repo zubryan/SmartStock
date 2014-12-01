@@ -531,8 +531,8 @@ loopMktdata:
 		MA5 := *new(Dec).Div(new(Dec).Add(&prcDec, &pRef.cpsum4), New(5), DECIMAL_PRC)
 		MA10 := *new(Dec).Div(new(Dec).Add(&prcDec, &pRef.cpsum9), New(10), DECIMAL_PRC)
 		MA20 := *new(Dec).Div(new(Dec).Add(&prcDec, &pRef.cpsum19), New(20), DECIMAL_PRC)
-		(*m).Y1 = MA5.Cmp(&MA10) <= 0 && MA10.Cmp(&MA20) >= 0
-		(*m).Y1 = MA5.Cmp(&MA10) <= 0 && MA10.Cmp(&MA20) <= 0
+		(*m).Y1 = MA5.Cmp(&MA10) >= 0 && MA10.Cmp(&MA20) >= 0
+		(*m).Y2 = MA5.Cmp(&MA10) <= 0 && MA10.Cmp(&MA20) <= 0
 		(*m).X3 = calcX3(&prcDec,
 			&pRef.prevEMAS,
 			&pRef.prevEMAL,
