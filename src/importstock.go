@@ -37,6 +37,7 @@ func main() {
 	APICONF["master"], _ = cfg.String("API", "master")
 	APICONF["version"], _ = cfg.String("API", "version")
 	APICONF["auth"], _ = cfg.String("API", "auth")
+	loadHK, _ := cfg.Bool("FILE", "loadHK")
 
 	STOCKFILE["FILE"], _ = cfg.String("FILE", "stocklist")
 
@@ -64,8 +65,10 @@ func main() {
 			panic(err)
 		}
 
+		//randomly mess the stocklist to optimize historical data processing
+		// filter the XHKG2 ...
+		stockmap := make(map[string]Stock, len(stock.Data))
 		for _, value := range stock.Data {
-			// ashare stock only
 			if value.ExchangeCD == "XSHG" {
 				if value.Ticker[0] != '6' {
 					continue
@@ -75,12 +78,17 @@ func main() {
 					continue
 				}
 			} else {
-				continue
+				if !loadHK {
+					continue
+				}
 			}
-			// exclude unlisted stock
 			if value.ListStatusCD == "L" {
-				fout.WriteString(value.SecID + "\n")
+				stockmap[value.Ticker+"."+value.ExchangeCD] = value
 			}
+		}
+
+		for k, _ := range stockmap {
+			fout.WriteString(k + "\n")
 		}
 	}
 }

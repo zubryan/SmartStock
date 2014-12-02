@@ -60,21 +60,21 @@ type Macd struct {
 
 // fields of MktEqud must fit
 var MktEqudFields = [8]string{"preClosePrice", "actPreClosePrice", "openPrice", "highestPrice", "lowestPrice", "closePrice", "turnoverVol", "turnoverValue"}
-var BeginDate = "19900101"
+var BeginDate = "20090101"
 var (
 	columns_mktdata_daily = [...]string{
 		"time",
-		"ticker.exchange",
+		//"ticker.exchange",
 		"dataDate",
-		"openPrice",
+		//"openPrice",
 		"closePrice",
-		"preClosePrice",
-		"highestPrice",
-		"lowestPrice",
-		"price_change",
-		"price_change_percentage",
+		//"preClosePrice",
+		//"highestPrice",
+		//"lowestPrice",
+		//"price_change",
+		//"price_change_percentage",
 		"volume",
-		"ammount",
+		//"ammount",
 	}
 	columns_macd = [...]string{
 		"time",
@@ -100,11 +100,20 @@ func getHistData(sec Stock) (MktEqudslice, error) {
 	retry := APIMAXRETRY
 	ok := false
 	//1 for success , -1 for no data , other retry
+	api := "getMktEqud.json"
+	ts := strings.Split(sec.Ticker_exchange, ".")
+
+	if len(ts) > 1 {
+		if ts[1] == "XHKG" {
+			api = "getMktHKEqud.json"
+		}
+	}
+
 	for !ok && retry > 0 {
 		body, err := CallDataAPI(
 			"market",
 			"1.0.0",
-			"getMktEqud.json",
+			api,
 			[]string{
 				"secID=" + sec.Ticker_exchange,
 				"field=" + strings.Join(MktEqudFields[:], ","),
@@ -115,6 +124,19 @@ func getHistData(sec Stock) (MktEqudslice, error) {
 			Logger.Panic(err)
 		}
 		json.Unmarshal(body, &histock)
+
+		if api == "getMktHKEqud.json" {
+			// Reverse the data sequence ... HKEqud is special~~!!!
+			var tmp MktEqud
+			i, j := 0, len(histock.Data)-1
+			for i < j {
+				tmp = histock.Data[i]
+				histock.Data[i] = histock.Data[j]
+				histock.Data[j] = tmp
+				i += 1
+				j -= 1
+			}
+		}
 
 		switch histock.RetCode {
 		case -1:
@@ -181,18 +203,19 @@ func calcMACD(MDSeq []MktdataDaily, Macd []Macd) {
 func parseMktData(MktdataDailySeq []MktdataDaily, Mktdata []MktEqud, ticker_exchange string) {
 	for j := range MktdataDailySeq {
 		var (
-			openPrice, closePrice, preClosePrice, highestPrice,
-			lowestPrice, priceChange, priceChangePct, turnoverVol, turnoverValue Dec
+			closePrice, turnoverVol Dec
+			// openPrice, closePrice, preClosePrice, highestPrice,
+			// lowestPrice, priceChange, priceChangePct, turnoverVol, turnoverValue Dec
 		)
-		openPrice.SetFloat64(Mktdata[j].OpenPrice)
+		//openPrice.SetFloat64(Mktdata[j].OpenPrice)
 		closePrice.SetFloat64(Mktdata[j].ClosePrice)
-		preClosePrice.SetFloat64(Mktdata[j].PreClosePrice)
-		highestPrice.SetFloat64(Mktdata[j].HighestPrice)
-		lowestPrice.SetFloat64(Mktdata[j].LowestPrice)
-		priceChange.Sub(&closePrice, &preClosePrice)
-		priceChangePct = CalcPercentage(priceChange, preClosePrice, DECIMAL_PCT+2)
+		//preClosePrice.SetFloat64(Mktdata[j].PreClosePrice)
+		//highestPrice.SetFloat64(Mktdata[j].HighestPrice)
+		//lowestPrice.SetFloat64(Mktdata[j].LowestPrice)
+		//priceChange.Sub(&closePrice, &preClosePrice)
+		//priceChangePct = CalcPercentage(priceChange, preClosePrice, DECIMAL_PCT+2)
 		turnoverVol.SetFloat64(Mktdata[j].TurnoverVol)
-		turnoverValue.SetFloat64(Mktdata[j].TurnoverValue)
+		//turnoverValue.SetFloat64(Mktdata[j].TurnoverValue)
 		//Mon Jan 2 15:04:05 -0700 MST 2006
 		datetime, _ := time.Parse("2006-01-02 15:04:05 MST -0700",
 			Mktdata[j].TradeDate+" 15:00:00 GMT +0800")
@@ -200,15 +223,15 @@ func parseMktData(MktdataDailySeq []MktdataDaily, Mktdata []MktEqud, ticker_exch
 		MktdataDailySeq[j].time = datetime.UnixNano() / 1e6
 		MktdataDailySeq[j].ticker_exchange = ticker_exchange // "ticker.exchange",
 		MktdataDailySeq[j].dataDate = Mktdata[j].TradeDate   // "dataDate",
-		MktdataDailySeq[j].openPrice = openPrice             // "openPrice",
-		MktdataDailySeq[j].closePrice = closePrice           // "closePrice",
-		MktdataDailySeq[j].preClosePrice = preClosePrice     // "preClosePrice",
-		MktdataDailySeq[j].highestPrice = highestPrice       // "highestPrice",
-		MktdataDailySeq[j].lowestPrice = lowestPrice         // "lowestPrice",
-		MktdataDailySeq[j].priceChange = priceChange         // "price_change",
-		MktdataDailySeq[j].priceChangePct = priceChangePct   // "price_change_percentage",
-		MktdataDailySeq[j].volume = turnoverVol              // "volume",
-		MktdataDailySeq[j].ammount = turnoverValue           // "ammount"
+		//MktdataDailySeq[j].openPrice = openPrice             // "openPrice",
+		MktdataDailySeq[j].closePrice = closePrice // "closePrice",
+		//MktdataDailySeq[j].preClosePrice = preClosePrice     // "preClosePrice",
+		//MktdataDailySeq[j].highestPrice = highestPrice       // "highestPrice",
+		//MktdataDailySeq[j].lowestPrice = lowestPrice         // "lowestPrice",
+		//MktdataDailySeq[j].priceChange = priceChange         // "price_change",
+		//MktdataDailySeq[j].priceChangePct = priceChangePct   // "price_change_percentage",
+		MktdataDailySeq[j].volume = turnoverVol // "volume",
+		//MktdataDailySeq[j].ammount = turnoverValue           // "ammount"
 	}
 }
 
@@ -225,7 +248,7 @@ func correctMktData(beforeCorr []MktdataDaily, afterCorr []MktdataDaily,
 			preClosePrice, actPrevClose Dec
 		)
 
-		if Mktdata[j].PreClosePrice != Mktdata[j].ActPreClosePrice && j > 0 {
+		if Mktdata[j].PreClosePrice != Mktdata[j].ActPreClosePrice && Mktdata[j].ActPreClosePrice != 0 && j > 0 {
 			var factor Dec
 			preClosePrice.SetFloat64(Mktdata[j].PreClosePrice) //"preClosePrice",
 			actPrevClose.SetFloat64(Mktdata[j].ActPreClosePrice)
@@ -247,39 +270,40 @@ func correctMktData(beforeCorr []MktdataDaily, afterCorr []MktdataDaily,
 			afterCorr[j].time = datetime.UnixNano() / 1e6
 			afterCorr[j].ticker_exchange = ticker_exchange // "ticker.exchange",
 			afterCorr[j].dataDate = Mktdata[j].TradeDate   // "dataDate",
-			afterCorr[j].openPrice = preClosePrice         // "openPrice",
-			afterCorr[j].closePrice = preClosePrice        // "closePrice",
-			afterCorr[j].preClosePrice = preClosePrice     // "preClosePrice",
-			afterCorr[j].highestPrice = preClosePrice      // "highestPrice",
-			afterCorr[j].lowestPrice = preClosePrice       // "lowestPrice",
-			afterCorr[j].priceChange = *New(0)             // "price_change",
-			afterCorr[j].priceChangePct = *New(0)          // "price_change_percentage",
-			afterCorr[j].volume = *New(0)                  // "volume",
-			afterCorr[j].ammount = *New(0)                 // "ammount"
+			//afterCorr[j].openPrice = preClosePrice         // "openPrice",
+			afterCorr[j].closePrice = preClosePrice // "closePrice",
+			//afterCorr[j].preClosePrice = preClosePrice     // "preClosePrice",
+			//afterCorr[j].highestPrice = preClosePrice      // "highestPrice",
+			//afterCorr[j].lowestPrice = preClosePrice       // "lowestPrice",
+			//afterCorr[j].priceChange = *New(0)             // "price_change",
+			//afterCorr[j].priceChangePct = *New(0)          // "price_change_percentage",
+			afterCorr[j].volume = *New(0) // "volume",
+			//afterCorr[j].ammount = *New(0)                 // "ammount"
 		} else {
 			afterCorr[j] = beforeCorr[j]
 		}
-		afterCorr[j].openPrice = *new(Dec).Mul(&afterCorr[j].openPrice, &factors[j]).Round(2)
+		//	afterCorr[j].openPrice = *new(Dec).Mul(&afterCorr[j].openPrice, &factors[j]).Round(2)
 		afterCorr[j].closePrice = *new(Dec).Mul(&afterCorr[j].closePrice, &factors[j]).Round(2)
-		closePrice := afterCorr[j].closePrice
-		if j == 0 {
-			afterCorr[j].preClosePrice = *new(Dec).Mul(&afterCorr[j].preClosePrice, &factors[j]).Round(2)
-		} else {
-			afterCorr[j].preClosePrice = afterCorr[j-1].closePrice //prevClose
-		}
-		preClosePrice := afterCorr[j].preClosePrice
+		//	closePrice := afterCorr[j].closePrice
+		//	if j == 0 {
+		//		afterCorr[j].preClosePrice = *new(Dec).Mul(&afterCorr[j].preClosePrice, &factors[j]).Round(2)
+		//	} else {
+		//		afterCorr[j].preClosePrice = afterCorr[j-1].closePrice //prevClose
+		//	}
+		//	preClosePrice := afterCorr[j].preClosePrice
 
-		afterCorr[j].highestPrice = *new(Dec).Mul(&afterCorr[j].highestPrice, &factors[j]).Round(2)
-		afterCorr[j].lowestPrice = *new(Dec).Mul(&afterCorr[j].lowestPrice, &factors[j]).Round(2)
+		//	afterCorr[j].highestPrice = *new(Dec).Mul(&afterCorr[j].highestPrice, &factors[j]).Round(2)
+		//	afterCorr[j].lowestPrice = *new(Dec).Mul(&afterCorr[j].lowestPrice, &factors[j]).Round(2)
 
-		afterCorr[j].priceChange.Sub(&closePrice, &preClosePrice)
-		afterCorr[j].priceChangePct = CalcPercentage(afterCorr[j].priceChange, preClosePrice, DECIMAL_PCT+2)
+		//	afterCorr[j].priceChange.Sub(&closePrice, &preClosePrice)
+		//afterCorr[j].priceChangePct = CalcPercentage(afterCorr[j].priceChange, preClosePrice, DECIMAL_PCT+2)
 	}
 }
 func loadHistdata(mds []Stock, ch chan int) {
 	c := GetNewDbClient()
 	for i, _ := range mds {
-		StartProcess(mds[i].Idx)
+		Idx := mds[i].Idx
+		StartProcess(Idx)
 		name_mktdata := "mktdata_daily." + mds[i].Ticker_exchange
 		name_corrected := "mktdata_daily_corrected." + mds[i].Ticker_exchange
 		name_macd := "indicators.macd." + mds[i].Ticker_exchange
@@ -295,16 +319,22 @@ func loadHistdata(mds []Stock, ch chan int) {
 			parseMktData(MktdataDailySeq, mktdataDaily.Data, mds[i].Ticker_exchange)
 			correctMktData(MktdataDailySeq, MktdataDailySeq_corrected, mktdataDaily.Data)
 			calcMACD(MktdataDailySeq_corrected, MacdSeq)
-			PutSeries(c, name_mktdata, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq))
-			PutSeries(c, name_corrected, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq_corrected))
-			PutSeries(c, name_macd, columns_macd[:], Macd2Pnts(MacdSeq))
+			// only write last 20 days
+			if len(MktdataDailySeq) > 20 {
+				PutSeries(c, name_mktdata, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq[len(MktdataDailySeq)-20:len(MktdataDailySeq)]))
+				PutSeries(c, name_corrected, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq_corrected[len(MktdataDailySeq_corrected)-20:len(MktdataDailySeq_corrected)]))
+			} else {
+				PutSeries(c, name_mktdata, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq))
+				PutSeries(c, name_corrected, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq_corrected))
+			}
+			PutSeries(c, name_macd, columns_macd[:], Macd2Pnts(MacdSeq[len(MacdSeq)-1:len(MacdSeq)]))
 		} else {
 			Logger.Printf("No Data for %s\n", mds[i].Ticker_exchange)
 		}
 		duration := time.Now().Sub(mds[i].ProcessStart)
 		Logger.Printf("%s Done | duration %s | %d to go.\n", mds[i].Ticker_exchange, duration, len(mds)-i-1)
 
-		SetStockStatus(mds[i].Idx, STATUS_DONE,
+		SetStockStatus(Idx, STATUS_DONE,
 			fmt.Sprintf("%s\nDone %d days calculated\nDuration %s",
 				mds[i].Ticker_exchange, days, duration))
 		if DEBUGMODE && i > (debuggonumber-1) {
@@ -347,17 +377,17 @@ func MktdataDaily2Pnts(MktdataDailySeq []MktdataDaily) [][]interface{} {
 	for j, _ := range MktdataDailySeq {
 		points[j] = []interface{}{
 			MktdataDailySeq[j].time,
-			MktdataDailySeq[j].ticker_exchange,
+			//MktdataDailySeq[j].ticker_exchange,
 			MktdataDailySeq[j].dataDate,
-			MktdataDailySeq[j].openPrice.Float64(),
+			//		MktdataDailySeq[j].openPrice.Float64(),
 			MktdataDailySeq[j].closePrice.Float64(),
-			MktdataDailySeq[j].preClosePrice.Float64(),
-			MktdataDailySeq[j].highestPrice.Float64(),
-			MktdataDailySeq[j].lowestPrice.Float64(),
-			MktdataDailySeq[j].priceChange.Float64(),
-			MktdataDailySeq[j].priceChangePct.Float64(),
+			//		MktdataDailySeq[j].preClosePrice.Float64(),
+			//		MktdataDailySeq[j].highestPrice.Float64(),
+			//		MktdataDailySeq[j].lowestPrice.Float64(),
+			//		MktdataDailySeq[j].priceChange.Float64(),
+			//	    MktdataDailySeq[j].priceChangePct.Float64(),
 			MktdataDailySeq[j].volume.Float64(),
-			MktdataDailySeq[j].ammount.Float64(),
+			//		MktdataDailySeq[j].ammount.Float64(),
 		}
 	}
 	if DEBUGMODE {
