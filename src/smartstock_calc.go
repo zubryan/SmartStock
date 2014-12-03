@@ -461,7 +461,7 @@ func HaveAlerts(Idx int) bool {
 	var haveAlerts bool = false
 
 	query := fmt.Sprintf("select dataDate,dataTime,lastPrice,price_change_percentage,volume "+
-		"from mktdata.%s where time > %d", pRef.ticker_exchange, pRef.lasttime)
+		"from mktdata.%s where time > %d order asc", pRef.ticker_exchange, pRef.lasttime)
 
 	if DEBUGMODE {
 		Logger.Println(query)
@@ -639,12 +639,17 @@ func getMinuteFromOpen(t string) Dec {
 	}
 	tBgnTrd, _ := time.Parse("15:04 MST -0700", TradeTimeWindows[0]+" GMT +0800")
 	tEndTrd, _ := time.Parse("15:04 MST -0700", TradeTimeWindows[len(TradeTimeWindows)-1]+" GMT +0800")
+
 	if tt.Before(tBgnTrd) {
 		return *New(0)
 	} else if tt.Before(tEndTrd) {
+
 		for i := 0; i < len(TradeTimeWindows)-1; i = i + 2 {
 			t1, _ := time.Parse("15:04 MST -0700", TradeTimeWindows[i]+" GMT +0800")
 			t2, _ := time.Parse("15:04 MST -0700", TradeTimeWindows[i+1]+" GMT +0800")
+			if tt.Before(t1) {
+				break
+			}
 			if tt.Equal(t1) {
 				v++
 				break
@@ -717,6 +722,5 @@ func Metrics2Pnts(Idx int, metrics []Metrics) [][]interface{} {
 }
 
 func main() {
-
 	Main()
 }
