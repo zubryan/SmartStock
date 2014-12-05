@@ -204,6 +204,7 @@ func CallDataAPI(api_catagory string, version string, api string, parameters []s
 	retry := 0
 	httpClient := &http.Client{}
 	for retry < APIMAXRETRY {
+		req.Header.Set("Connection", "close")
 		resp, err := httpClient.Do(req)
 		if err != nil {
 			loggerFW.Println(err)
@@ -212,10 +213,14 @@ func CallDataAPI(api_catagory string, version string, api string, parameters []s
 			continue
 		}
 		if resp != nil && resp.StatusCode == 200 {
+			loggerFW.Println("Calling API succeed %s", url)
+			//loggerFW.Println(resp.Header)
 			body, _ := ioutil.ReadAll(resp.Body)
+			resp.Body.Close()
+			//loggerFW.Println("API body %s", body)
 			return body, nil
 		} else {
-			Logger.Println("[ERROR] fail calling %s", url)
+			loggerFW.Println("[ERROR] fail calling %s", url)
 			time.Sleep(time.Second)
 			retry++
 		}
