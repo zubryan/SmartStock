@@ -43,9 +43,9 @@ type Macd struct {
 }
 
 type Criteria struct {
-	name  string
-	desc  string
-	isHit func(*Metrics) bool
+	name     string
+	desc     string
+	criteria string
 }
 type Refdata struct {
 	ticker_exchange string
@@ -56,7 +56,6 @@ type Refdata struct {
 	shortName     string
 	tradableQty   Dec
 	currency      string
-	criterias     []Criteria
 	closePriceSeq [20]Dec
 	cpsum4        Dec
 	cpsum9        Dec
@@ -109,13 +108,13 @@ var columns_metrics = [...]string{
 
 var DefaultCriterias []Criteria = []Criteria{
 	Criteria{
-		name:  "Criteria 1",
-		desc:  "xxxx",
-		isHit: isHitCriteria_1},
+		name:     "Default Criteria 1",
+		desc:     "Default Criteria 1",
+		criteria: "X1_2 > 2,X2 > 3,Y1 = true,X3 < 0.2,X4 < 500000"},
 	Criteria{
-		name:  "Criteria 2",
-		desc:  "xxxx",
-		isHit: isHitCriteria_2},
+		name:     "Default Criteria 2",
+		desc:     "Default Criteria 2",
+		criteria: "X1_1 > 2,X2 < -3,Y1 = false,Y2 = false,X3 < 0.2,X4 < 500000"},
 }
 
 var (
@@ -126,24 +125,85 @@ var (
 
 var Ref []Refdata
 
-func isHitCriteria_1(m *Metrics) bool {
-	var macdx Dec
-	macdx.SetFloat64(0.2)
-	return (*m).X1_2.Cmp(New(2)) > 0 &&
-		(*m).X2.Cmp(New(3)) > 0 &&
-		(*m).Y1 &&
-		(*m).X3.Cmp(&macdx) < 0 &&
-		(*m).X4.Cmp(New(500000)) < 0
+func isHitCriteria(m *Metrics, criteria string) bool {
+	result := true
+	tmp := strings.Split(criteria, ",")
+	if len(tmp) == 0 || criteria == "" {
+		return false
+	}
+	for _, cri := range tmp {
+		if !result {
+			break
+		}
+		tmp1 := strings.Split(cri, " ")
+		if len(tmp1) < 3 {
+			continue
+		}
+		metric := tmp1[0]
+		method := tmp1[1]
+		value := tmp1[2]
+		switch metric {
+		case "X1_1":
+			result = result && CompMetric(&m.X1_1, method, value)
+		case "X1_2":
+			result = result && CompMetric(&m.X1_2, method, value)
+		case "X2":
+			result = result && CompMetric(&m.X2, method, value)
+		case "X3":
+			result = result && CompMetric(&m.X3, method, value)
+		case "X4":
+			result = result && CompMetric(&m.X4, method, value)
+		case "Y1":
+			result = result && CompMetricBool(m.Y1, method, value)
+		case "Y2":
+			result = result && CompMetricBool(m.Y2, method, value)
+		default:
+			continue
+		}
+	}
+	return result
 }
-func isHitCriteria_2(m *Metrics) bool {
-	var macdx Dec
-	macdx.SetFloat64(0.2)
-	return (*m).X1_1.Cmp(New(2)) > 0 &&
-		(*m).X2.Cmp(New(-3)) < 0 &&
-		!(*m).Y1 &&
-		!(*m).Y2 &&
-		(*m).X3.Cmp(&macdx) < 0 &&
-		(*m).X4.Cmp(New(500000)) < 0
+func CompMetric(metric *Dec, method string, value string) bool {
+
+	var value1 Dec
+	value1.SetString(value)
+
+	switch method {
+	case ">":
+		return metric.Cmp(&value1) > 0
+	case ">=":
+		return metric.Cmp(&value1) >= 0
+	case "=":
+		return metric.Cmp(&value1) == 0
+	case "<=":
+		return metric.Cmp(&value1) <= 0
+	case "<":
+		return metric.Cmp(&value1) < 0
+	case "!=":
+		return metric.Cmp(&value1) != 0
+	default:
+		return false
+	}
+}
+func CompMetricBool(metric bool, method string, value string) bool {
+	value1 := false
+	switch value {
+	case "true":
+		value1 = true
+	case "false":
+		value1 = false
+	default:
+		value1 = false
+	}
+
+	switch method {
+	case "!=":
+		return metric != value1
+	case "=":
+		return metric == value1
+	default:
+		return false
+	}
 }
 
 func init() {
@@ -203,7 +263,6 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	// ref.shortName = "undefined"
 	// ref.tradableQty
 	// ref.currency
-	ref.criterias = DefaultCriterias
 	for i, p := range points {
 		f, ok := p[idxClosePrice].(float64)
 		if !ok {
@@ -425,9 +484,38 @@ func loadRefData(mds []Stock, ch chan int) {
 	ch <- 1
 }
 
+func GetCurrentCriteria() string {
+	query := "select criteria from criteria limit 1"
+	series, err := c.Query(query)
+
+	if err != nil {
+		Logger.Println("No Criteria")
+		return ""
+	}
+	if len(series) == 0 {
+		Logger.Println(query + "\nNo Data")
+		return ""
+	}
+	//columns := series[0].GetColumns()
+	points := series[0].GetPoints()
+	f, ok := points[0][0].(string)
+	if ok {
+		return f
+	} else {
+		return ""
+	}
+}
+
 func calcRealTimeMktData(mds []Stock, ch chan int) {
 	// c := GetNewDbClient()
+	lastcriterias := ""
+	newCriteria := false
 	for {
+		criterias := GetCurrentCriteria()
+		if criterias != lastcriterias {
+			lastcriterias = criterias
+			newCriteria = true
+		}
 		for i := range mds {
 			if DEBUGMODE && i >= 2 {
 				Logger.Printf("OK.  \n")
@@ -435,10 +523,14 @@ func calcRealTimeMktData(mds []Stock, ch chan int) {
 			}
 			var idx = mds[i].Idx
 			var pRef = &Ref[idx]
+			if newCriteria {
+				pRef.isAlertRaised = false
+				SetStockStatus(idx, STATUS_READY, "Recalculating...\nLstTime:"+Ref[idx].dataTime)
+			}
 			if pRef.isQualified {
 				if !pRef.isAlertRaised {
 					StartProcess(idx)
-					if HaveAlerts(idx) {
+					if HaveAlerts(idx, criterias) {
 						SetStockStatus(idx, STATUS_DONE, "Alert"+pRef.AlertMsg)
 					} else {
 						SetStockStatus(idx, STATUS_READY, "Standby\nLstTime:"+Ref[idx].dataTime)
@@ -453,12 +545,29 @@ func calcRealTimeMktData(mds []Stock, ch chan int) {
 		// }
 
 		time.Sleep(1000 * time.Millisecond)
+		newCriteria = false
 	}
 	ch <- 1
 }
-func HaveAlerts(Idx int) bool {
+func HaveAlerts(Idx int, criteriasstring string) bool {
 	var pRef = &Ref[Idx]
 	var haveAlerts bool = false
+	var criterias []Criteria = nil
+	criteriaSet := strings.Split(criteriasstring, "|")
+	if len(criteriaSet) == 0 || criteriasstring == "" {
+		criterias = DefaultCriterias
+	} else {
+		criterias = make([]Criteria, len(criteriaSet))
+		for i, s := range criteriaSet {
+			t := strings.Split(s, ":")
+			criterias[i].desc = t[0]
+			criterias[i].name = t[0]
+			if len(t) < 2 {
+				criterias[i].criteria = ""
+			}
+			criterias[i].criteria = t[1]
+		}
+	}
 
 	query := fmt.Sprintf("select dataDate,dataTime,lastPrice,price_change_percentage,volume "+
 		"from mktdata.%s where time > %d order asc", pRef.ticker_exchange, pRef.lasttime)
@@ -551,9 +660,10 @@ loopMktdata:
 
 		// PutSeries(c, "metrics."+pRef.ticker_exchange, columns_metrics[:],
 		// 	Metrics2Pnts(Idx, []Metrics{pRef.Metrics}))
-		for i := range pRef.criterias {
-			if pRef.criterias[i].isHit(m) {
-				genAlert(Idx, &pRef.criterias[i], m,
+
+		for i := range criterias {
+			if isHitCriteria(m, criterias[i].criteria) {
+				genAlert(Idx, &criterias[i], m,
 					[]string{
 						"Prc", prcDec.Round(3).String(),
 						"Vol", volDec.Round(0).String(),

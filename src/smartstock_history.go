@@ -110,6 +110,8 @@ func getHistData(sec Stock) (MktEqudslice, error) {
 	}
 
 	for !ok && retry > 0 {
+		SetStockStatus(sec.Idx, STATUS_RUNNING, "Calling DataAPI...")
+
 		body, err := CallDataAPI(
 			"market",
 			"1.0.0",
@@ -120,6 +122,7 @@ func getHistData(sec Stock) (MktEqudslice, error) {
 				"&beginDate=" + BeginDate,
 			})
 		//Logger.Print(string(body))
+		SetStockStatus(sec.Idx, STATUS_RUNNING, "Checking DataAPI result")
 		if err != nil {
 			Logger.Panic(err)
 		}
