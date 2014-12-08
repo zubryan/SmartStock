@@ -10,13 +10,16 @@ function today() {
     var year = date.getFullYear()
     var month = date.getMonth() + 1
     var d = date.getDate()
+    if (d < 10) {
+        d = "0" + d
+    }
     return year + "-" + month + "-" + d
 }
 
-function refreshUnread(){
+function refreshUnread() {
     var unreadCount = $(".need-read").length
     $("#unread-count").html(unreadCount)
-    if(unreadCount > 0){
+    if (unreadCount > 0) {
         document.title = "您有" + unreadCount + "条未读提醒"
     } else {
         document.title = "围数资本SmartStock"
@@ -49,18 +52,21 @@ function init() {
 }
 
 function initReport() {
-    var date = new Date()
-    var year = date.getFullYear()
-    var month = date.getMonth() + 1
-    var d = date.getDate()
+    var currentDate = new Date()
     for (var i = 0; i < 5; i++) {
-        var dateStr = year + "-" + month + "-" + (d - i)
-        $("#reportList").append('<li><a href="/report/a/' + dateStr + '">' + dateStr + ' 报告</a></li>')
+        var date = new Date(currentDate.getTime() - (86400000 * i)) // 后推i天
+        var year = date.getFullYear()
+        var month = date.getMonth() + 1
+        var d = date.getDate()
+        if (d < 10) {
+            d = "0" + d
+        }
+        var dateStr = year + "-" + month + "-" + d
+        $("#reportList").append('<li><a href="/report/a/' + dateStr + '.txt">' + dateStr + ' 报告</a></li>')
     }
-
 }
 
-function initHeader(){
+function initHeader() {
     var thead = $("#alertTable thead")
     var theadHTML = "<tr>"
     theadHTML += "<th width=\"140px\">股票代码.交易行</th>"
@@ -81,7 +87,7 @@ function initAlert() {
             var columns = data[0]["columns"]
             var points = data[0]["points"]
 
-            if($("#alertTable thead").html() === ""){
+            if ($("#alertTable thead").html() === "") {
                 initHeader()
             }
 
@@ -131,7 +137,7 @@ function appendData() {
             var columns = data[0]["columns"]
             var points = data[0]["points"]
 
-            if($("#alertTable thead").html() === ""){
+            if ($("#alertTable thead").html() === "") {
                 initHeader()
             }
 
