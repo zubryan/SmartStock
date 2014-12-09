@@ -53,7 +53,6 @@ type Refdata struct {
 	ticker_exchange string
 	dataTime        string // "dataTime",
 	dataDate        string // "dataTime",
-	lasttime        int64
 
 	shortName     string
 	tradableQty   Dec
@@ -217,9 +216,7 @@ func init() {
 	SetProcess(Goproc{calcStaticMktData, "Calculate static results ..."})
 	//DBdropShards([]string{"metrics", "alerts"})
 
-	alerttableName = alerttableName + "-" + calcDate
 	// ignore errors when droping.... TODO: error handling
-	c.Query("drop series " + alerttableName)
 	thecriterias = GetCurrentCriteria()
 	//DBdropShards([]string{"metrics"})
 }
@@ -227,13 +224,11 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	var ref Refdata
 	ref.isQualified = false
 	ref.isAlertRaised = false
-	ref.lasttime = 0
 	// ..........m(_._)m
 	datetime, _ := time.Parse("2006-01-02 MST -0700",
 		calcDate+" GMT +0800")
 	// ..........m(_._)m
 	timeInt := datetime.UnixNano()
-	ref.lasttime = timeInt
 
 	query := fmt.Sprintf("select dataDate,closePrice,volume "+
 		"from mktdata_daily_corrected.%s where time < %d limit 19 order desc", ticker, timeInt)
@@ -334,7 +329,7 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	ref.isActive = false
 
 	query = fmt.Sprintf("select EMAL,EMAS,DEA "+
-		"from indicators.macd.%s limit 1", ticker)
+		"from indicators.macd.%s  where time < %d  limit 1", ticker, timeInt)
 	series, err = c.Query(query)
 	if err != nil {
 		Logger.Panic(err)
@@ -439,6 +434,7 @@ func getRefdataDataAPI(ticker string, Idx int, date string) (MktEqudRefslice, er
 	if retry == 0 {
 		return refdata, errors.New("Failed calling DataAPI...")
 	}
+
 	return refdata, nil
 }
 
@@ -487,8 +483,9 @@ func loadRefData(mds []Stock, ch chan int) {
 		} else {
 			SetStockStatus(Idx, STATUS_ERROR, "Not enough data! no PrevClose")
 		}
-
+		// fmt.Println(*pRef)
 	}
+
 	ch <- 1
 }
 
@@ -557,9 +554,8 @@ func HaveAlerts(Idx int, criteriasstring string) bool {
 		}
 	}
 
-	query := fmt.Sprintf("select dataDate,dataTime,closePrice,volume "+
-		"from mktdata_daily_corrected.%s where dataDate = '%s' order asc", pRef.ticker_exchange, calcDate)
-
+	query := fmt.Sprintf("select dataDate,closePrice,volume "+
+		"from mktdata_daily_corrected.%s where dataDate = '%s'", pRef.ticker_exchange, calcDate)
 	if DEBUGMODE {
 		Logger.Println(query)
 	}
@@ -582,15 +578,11 @@ func HaveAlerts(Idx int, criteriasstring string) bool {
 		return false
 	}
 
-	var idxtime, idxdataDate, idxdataTime, idxlastPrice, idxVol int
+	var idxdataDate, idxdataTime, idxlastPrice, idxVol int
 	for i, _ := range columns {
 		switch columns[i] {
-		case "time":
-			idxtime = i
 		case "dataDate":
 			idxdataDate = i
-		case "dataTime":
-			idxdataTime = i
 		case "closePrice":
 			idxlastPrice = i
 		case "volume":
@@ -607,12 +599,6 @@ func HaveAlerts(Idx int, criteriasstring string) bool {
 	// X3       Dec    // "X3", abs(MACD)
 	// X4       Dec    // "X4", tradableQty * Prc
 	TotalMinute := TotalMinute()
-	ok := true
-	f, ok := points[0][idxtime].(float64)
-	if !ok {
-		Logger.Panic("No lasttime")
-	}
-	pRef.lasttime = int64(f) * 1e6
 loopMktdata:
 
 	for _, p := range points {
@@ -664,7 +650,6 @@ loopMktdata:
 			}
 		}
 	}
-	// pRef.lasttime =
 	return haveAlerts
 }
 
@@ -824,5 +809,7 @@ func main() {
 		Logger.Fatalln("Please input calculation date: \n eg. ./smartstock_calc_static 2014-04-01\n")
 	}
 	calcDate = os.Args[1]
+	alerttableName = alerttableName + "." + calcDate
+	c.Query("drop series " + alerttableName)
 	Main()
 }

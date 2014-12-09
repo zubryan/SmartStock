@@ -332,7 +332,12 @@ func loadHistdata(mds []Stock, ch chan int) {
 				//PutSeries(c, name_mktdata, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq))
 				PutSeries(c, name_corrected, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq_corrected))
 			}
-			PutSeries(c, name_macd, columns_macd[:], Macd2Pnts(MacdSeq[len(MacdSeq)-1:len(MacdSeq)]))
+			if len(MacdSeq) > 10 {
+				PutSeries(c, name_macd, columns_macd[:], Macd2Pnts(MacdSeq[len(MacdSeq)-10:len(MacdSeq)]))
+			} else {
+				PutSeries(c, name_macd, columns_macd[:], Macd2Pnts(MacdSeq))
+			}
+
 		} else {
 			Logger.Printf("No Data for %s\n", mds[i].Ticker_exchange)
 		}

@@ -105,7 +105,7 @@ var columns_metrics = [...]string{
 	"X3",
 	"X4",
 }
-
+var alerttableName = "alerts"
 var DefaultCriterias []Criteria = []Criteria{
 	Criteria{
 		name:     "Default Criteria 1",
@@ -214,6 +214,9 @@ func init() {
 	SetProcess(Goproc{loadRefData, "Loading RefData..."})
 	SetProcess(Goproc{calcRealTimeMktData, "Continuously Monitor the Markets ..."})
 	//DBdropShards([]string{"metrics", "alerts"})
+
+	alerttableName = alerttableName + "." + time.Now().String()[:10]
+
 	DBdropShards([]string{"metrics"})
 }
 func getRefdataDB(ticker string, Idx int) (Refdata, error) {
@@ -696,7 +699,7 @@ func genAlert(Idx int, cri *Criteria, m *Metrics, params []string) {
 	}
 	Ref[Idx].AlertMsg = alert.criteriaHit
 
-	PutSeries(c, "alerts", columns_alert[:], Alert2Pnts(Idx, []Alert{alert}))
+	PutSeries(c, alerttableName, columns_alert[:], Alert2Pnts(Idx, []Alert{alert}))
 }
 
 func calcX1_1(volume, volsum5, MinuteFromOpen, TotalMinute *Dec) Dec {
