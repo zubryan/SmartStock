@@ -186,11 +186,42 @@ func initDB() {
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata_daily", DBCONF["database"], "/mktdata_daily.*/", "inf", "10000d", 1, 1})
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata", DBCONF["database"], "/mktdata\\..*/", "inf", "7d", 1, 1})
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"metrics", DBCONF["database"], "/metrics\\..*/", "inf", "7d", 1, 1})
-		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"alerts", DBCONF["database"], "/alerts/", "inf", "10000d", 1, 1})
+		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"alerts", DBCONF["database"], "/alerts\\..*/", "inf", "10000d", 1, 1})
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata", DBCONF["database"], "/mktdata\\..*/", "inf", "7d", 1, 1})
 		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"indicators", DBCONF["database"], "/indicators\\..*/", "inf", "10000d", 1, 1})
+		c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"criteria", DBCONF["database"], "/criter.*/", "inf", "7d", 1, 1})
 		//	c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"default", DBCONF["database"], "/.*/", "inf", "30d", 1, 1})
+	} else {
+		tmp := make(map[string]bool)
+		ssps, _ := c.GetShardSpaces()
+		for _, ssp := range ssps {
+			if ssp.Database == DBCONF["database"] {
+				tmp[ssp.Name] = true
+			}
+		}
+		if !tmp["mktdata_daily"] {
+			c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata_daily", DBCONF["database"], "/mktdata_daily.*/", "inf", "10000d", 1, 1})
+		}
+		if !tmp["mktdata"] {
+			c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata", DBCONF["database"], "/mktdata\\..*/", "inf", "7d", 1, 1})
+		}
+		if !tmp["metrics"] {
+			c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"metrics", DBCONF["database"], "/metrics\\..*/", "inf", "7d", 1, 1})
+		}
+		if !tmp["alerts"] {
+			c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"alerts", DBCONF["database"], "/alerts\\..*/", "inf", "10000d", 1, 1})
+		}
+		if !tmp["mktdata"] {
+			c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"mktdata", DBCONF["database"], "/mktdata\\..*/", "inf", "7d", 1, 1})
+		}
+		if !tmp["indicators"] {
+			c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"indicators", DBCONF["database"], "/indicators\\..*/", "inf", "10000d", 1, 1})
+		}
+		if !tmp["criteria"] {
+			c.CreateShardSpace(DBCONF["database"], &client.ShardSpace{"criteria", DBCONF["database"], "/criter.*/", "inf", "7d", 1, 1})
+		}
 	}
+
 }
 
 func CallDataAPI(api_catagory string, version string, api string, parameters []string) ([]byte, error) {
@@ -233,8 +264,12 @@ func initLogger() {
 	var err error
 	logfile, err = os.OpenFile(LOGFILE, os.O_RDWR|os.O_APPEND, 0)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(-1)
+		err1 := err
+		logfile, err = os.OpenFile(LOGFILE, os.O_RDWR|os.O_CREATE, 0)
+		if err != nil {
+			fmt.Println(err1.Error() + "\n" + err.Error())
+			os.Exit(-1)
+		}
 	}
 	Logger = log.New(logfile, "[INFO]", LOGOPTS)
 	loggerFW = log.New(logfile, "[FRWK]", LOGOPTS)

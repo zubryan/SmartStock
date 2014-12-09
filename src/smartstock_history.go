@@ -127,6 +127,8 @@ func getHistData(sec Stock) (MktEqudslice, error) {
 			Logger.Panic(err)
 		}
 		json.Unmarshal(body, &histock)
+		Logger.Print("HISTOCK")
+		Logger.Println(histock)
 
 		if api == "getMktHKEqud.json" {
 			// Reverse the data sequence ... HKEqud is special~~!!!
@@ -307,7 +309,7 @@ func loadHistdata(mds []Stock, ch chan int) {
 	for i, _ := range mds {
 		Idx := mds[i].Idx
 		StartProcess(Idx)
-		name_mktdata := "mktdata_daily." + mds[i].Ticker_exchange
+		//name_mktdata := "mktdata_daily." + mds[i].Ticker_exchange
 		name_corrected := "mktdata_daily_corrected." + mds[i].Ticker_exchange
 		name_macd := "indicators.macd." + mds[i].Ticker_exchange
 		mktdataDaily, err := getHistData(mds[i])
@@ -322,15 +324,20 @@ func loadHistdata(mds []Stock, ch chan int) {
 			parseMktData(MktdataDailySeq, mktdataDaily.Data, mds[i].Ticker_exchange)
 			correctMktData(MktdataDailySeq, MktdataDailySeq_corrected, mktdataDaily.Data)
 			calcMACD(MktdataDailySeq_corrected, MacdSeq)
-			// only write last 20 days
-			if len(MktdataDailySeq) > 20 {
-				PutSeries(c, name_mktdata, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq[len(MktdataDailySeq)-20:len(MktdataDailySeq)]))
-				PutSeries(c, name_corrected, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq_corrected[len(MktdataDailySeq_corrected)-20:len(MktdataDailySeq_corrected)]))
+			// only write last 30 days
+			if len(MktdataDailySeq) > 30 {
+				//PutSeries(c, name_mktdata, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq[len(MktdataDailySeq)-30:len(MktdataDailySeq)]))
+				PutSeries(c, name_corrected, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq_corrected[len(MktdataDailySeq_corrected)-30:len(MktdataDailySeq_corrected)]))
 			} else {
-				PutSeries(c, name_mktdata, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq))
+				//PutSeries(c, name_mktdata, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq))
 				PutSeries(c, name_corrected, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq_corrected))
 			}
-			PutSeries(c, name_macd, columns_macd[:], Macd2Pnts(MacdSeq[len(MacdSeq)-1:len(MacdSeq)]))
+			if len(MacdSeq) > 10 {
+				PutSeries(c, name_macd, columns_macd[:], Macd2Pnts(MacdSeq[len(MacdSeq)-10:len(MacdSeq)]))
+			} else {
+				PutSeries(c, name_macd, columns_macd[:], Macd2Pnts(MacdSeq))
+			}
+
 		} else {
 			Logger.Printf("No Data for %s\n", mds[i].Ticker_exchange)
 		}

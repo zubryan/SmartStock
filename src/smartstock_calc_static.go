@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ type MktEqudRef struct {
 }
 
 var MktEqudRefFields = [3]string{"secShortName", "negMarketValue", "transCurrCD"}
+var thecriterias string
 
 type MktEqudRefslice struct {
 	RetCode int
@@ -51,7 +53,6 @@ type Refdata struct {
 	ticker_exchange string
 	dataTime        string // "dataTime",
 	dataDate        string // "dataTime",
-	lasttime        int64
 
 	shortName     string
 	tradableQty   Dec
@@ -106,6 +107,8 @@ var columns_metrics = [...]string{
 	"X4",
 }
 var alerttableName = "alerts"
+var calcDate = "2014-12-01"
+var c = GetNewDbClient()
 var DefaultCriterias []Criteria = []Criteria{
 	Criteria{
 		name:     "Default Criteria 1",
@@ -208,31 +211,28 @@ func CompMetricBool(metric bool, method string, value string) bool {
 
 func init() {
 	Ref = make([]Refdata, STOCKCOUNT)
-	if !DEBUGMODE {
-		SetGoInf()
-	}
+
 	SetProcess(Goproc{loadRefData, "Loading RefData..."})
-	SetProcess(Goproc{calcRealTimeMktData, "Continuously Monitor the Markets ..."})
+	SetProcess(Goproc{calcStaticMktData, "Calculate static results ..."})
 	//DBdropShards([]string{"metrics", "alerts"})
 
-	alerttableName = alerttableName + "." + time.Now().String()[:10]
-
-	DBdropShards([]string{"metrics"})
+	// ignore errors when droping.... TODO: error handling
+	thecriterias = GetCurrentCriteria()
+	//DBdropShards([]string{"metrics"})
 }
 func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	var ref Refdata
 	ref.isQualified = false
 	ref.isAlertRaised = false
-	ref.lasttime = 0
 	// ..........m(_._)m
 	datetime, _ := time.Parse("2006-01-02 MST -0700",
-		time.Now().String()[:10]+" GMT +0800")
+		calcDate+" GMT +0800")
 	// ..........m(_._)m
 	timeInt := datetime.UnixNano()
-	ref.lasttime = timeInt
 
 	query := fmt.Sprintf("select dataDate,closePrice,volume "+
 		"from mktdata_daily_corrected.%s where time < %d limit 19 order desc", ticker, timeInt)
+
 	series, err := c.Query(query)
 	if err != nil {
 		SetStockStatus(Idx, STATUS_ERROR, "Call DB ERROR: "+err.Error())
@@ -246,6 +246,7 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	}
 	columns := series[0].GetColumns()
 	points := series[0].GetPoints()
+
 	if len(points) != 19 {
 		return ref, nil
 	}
@@ -267,6 +268,7 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	// ref.tradableQty
 	// ref.currency
 	for i, p := range points {
+
 		f, ok := p[idxClosePrice].(float64)
 		if !ok {
 			Logger.Println("invalid prc")
@@ -327,7 +329,7 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	ref.isActive = false
 
 	query = fmt.Sprintf("select EMAL,EMAS,DEA "+
-		"from indicators.macd.%s limit 1", ticker)
+		"from indicators.macd.%s  where time < %d  limit 1", ticker, timeInt)
 	series, err = c.Query(query)
 	if err != nil {
 		Logger.Panic(err)
@@ -432,10 +434,9 @@ func getRefdataDataAPI(ticker string, Idx int, date string) (MktEqudRefslice, er
 	if retry == 0 {
 		return refdata, errors.New("Failed calling DataAPI...")
 	}
+
 	return refdata, nil
 }
-
-var c = GetNewDbClient()
 
 func loadRefData(mds []Stock, ch chan int) {
 	// c := GetNewDbClient()
@@ -482,8 +483,9 @@ func loadRefData(mds []Stock, ch chan int) {
 		} else {
 			SetStockStatus(Idx, STATUS_ERROR, "Not enough data! no PrevClose")
 		}
-
+		// fmt.Println(*pRef)
 	}
+
 	ch <- 1
 }
 
@@ -509,46 +511,26 @@ func GetCurrentCriteria() string {
 	}
 }
 
-func calcRealTimeMktData(mds []Stock, ch chan int) {
+func calcStaticMktData(mds []Stock, ch chan int) {
 	// c := GetNewDbClient()
-	lastcriterias := ""
-	newCriteria := false
-	for {
-		criterias := GetCurrentCriteria()
-		if criterias != lastcriterias {
-			lastcriterias = criterias
-			newCriteria = true
+	for i := range mds {
+		if DEBUGMODE && i >= 2 {
+			Logger.Printf("OK.  \n")
+			break
 		}
-		for i := range mds {
-			if DEBUGMODE && i >= 2 {
-				Logger.Printf("OK.  \n")
-				break
-			}
-			var idx = mds[i].Idx
-			var pRef = &Ref[idx]
-			if newCriteria {
-				pRef.isAlertRaised = false
-				SetStockStatus(idx, STATUS_READY, "Recalculating...\nLstTime:"+Ref[idx].dataTime)
-			}
-			if pRef.isQualified {
-				if !pRef.isAlertRaised {
-					StartProcess(idx)
-					if HaveAlerts(idx, criterias) {
-						SetStockStatus(idx, STATUS_DONE, "Alert"+pRef.AlertMsg)
-					} else {
-						SetStockStatus(idx, STATUS_READY, "Standby\nLstTime:"+Ref[idx].dataTime)
-					}
-				}
+		var idx = mds[i].Idx
+		var pRef = &Ref[idx]
+		SetStockStatus(idx, STATUS_READY, "Calculating...\nLstTime:"+Ref[idx].dataTime)
+		if pRef.isQualified {
+			StartProcess(idx)
+			if HaveAlerts(idx, thecriterias) {
+				SetStockStatus(idx, STATUS_DONE, "Alert"+pRef.AlertMsg)
 			} else {
-				SetStockStatus(idx, STATUS_ERROR, "Not enough data!")
+				SetStockStatus(idx, STATUS_READY, "No Alert:")
 			}
+		} else {
+			SetStockStatus(idx, STATUS_ERROR, "Not enough data!")
 		}
-		// if DEBUGMODE {
-		// 	break
-		// }
-
-		time.Sleep(1000 * time.Millisecond)
-		newCriteria = false
 	}
 	ch <- 1
 }
@@ -572,9 +554,8 @@ func HaveAlerts(Idx int, criteriasstring string) bool {
 		}
 	}
 
-	query := fmt.Sprintf("select dataDate,dataTime,lastPrice,price_change_percentage,volume "+
-		"from mktdata.%s where time > %d order asc", pRef.ticker_exchange, pRef.lasttime)
-
+	query := fmt.Sprintf("select dataDate,closePrice,volume "+
+		"from mktdata_daily_corrected.%s where dataDate = '%s'", pRef.ticker_exchange, calcDate)
 	if DEBUGMODE {
 		Logger.Println(query)
 	}
@@ -597,19 +578,13 @@ func HaveAlerts(Idx int, criteriasstring string) bool {
 		return false
 	}
 
-	var idxtime, idxdataDate, idxdataTime, idxlastPrice, idxPriceChgPct, idxVol int
+	var idxdataDate, idxdataTime, idxlastPrice, idxVol int
 	for i, _ := range columns {
 		switch columns[i] {
-		case "time":
-			idxtime = i
 		case "dataDate":
 			idxdataDate = i
-		case "dataTime":
-			idxdataTime = i
-		case "lastPrice":
+		case "closePrice":
 			idxlastPrice = i
-		case "price_change_percentage":
-			idxPriceChgPct = i
 		case "volume":
 			idxVol = i
 		default:
@@ -624,29 +599,25 @@ func HaveAlerts(Idx int, criteriasstring string) bool {
 	// X3       Dec    // "X3", abs(MACD)
 	// X4       Dec    // "X4", tradableQty * Prc
 	TotalMinute := TotalMinute()
-	ok := true
-	f, ok := points[0][idxtime].(float64)
-	if !ok {
-		Logger.Panic("No lasttime")
-	}
-	pRef.lasttime = int64(f) * 1e6
 loopMktdata:
 
 	for _, p := range points {
 		m := &pRef.Metrics
-		var volume, lstprice, prcChg float64
-		var volDec, prcDec Dec
+		var volume, lstprice float64
+		var volDec, prcDec, priceChange, priceChangePct, closePrice Dec
 		pRef.dataTime, _ = p[idxdataTime].(string)
 		pRef.dataDate, _ = p[idxdataDate].(string)
 		volume, _ = p[idxVol].(float64)
 		lstprice, _ = p[idxlastPrice].(float64)
-		prcChg, _ = p[idxPriceChgPct].(float64)
-		volDec.SetFloat64(volume)
-		MinuteFromOpen := getMinuteFromOpen(pRef.dataTime)
-		(*m).X1_1 = calcX1_1(&volDec, &pRef.volsum5, &MinuteFromOpen, &TotalMinute)
-		(*m).X1_2 = calcX1_2(&volDec, &pRef.volsum10, &MinuteFromOpen, &TotalMinute)
 
-		(*m).X2.SetFloat64(prcChg)
+		volDec.SetFloat64(volume)
+		// MinuteFromOpen := TotalMinute
+		(*m).X1_1 = calcX1_1(&volDec, &pRef.volsum5, &TotalMinute, &TotalMinute)
+		(*m).X1_2 = calcX1_2(&volDec, &pRef.volsum10, &TotalMinute, &TotalMinute)
+		closePrice.SetFloat64(lstprice)
+		priceChange.Sub(&closePrice, &pRef.closePriceSeq[0])
+		priceChangePct = CalcPercentage(priceChange, pRef.closePriceSeq[0], DECIMAL_PCT+2)
+		(*m).X2.SetString(priceChangePct.String())
 
 		prcDec.SetFloat64(lstprice)
 		MA5 := *new(Dec).Div(new(Dec).Add(&prcDec, &pRef.cpsum4), New(5), DECIMAL_PRC)
@@ -679,7 +650,6 @@ loopMktdata:
 			}
 		}
 	}
-	// pRef.lasttime =
 	return haveAlerts
 }
 
@@ -835,5 +805,11 @@ func Metrics2Pnts(Idx int, metrics []Metrics) [][]interface{} {
 }
 
 func main() {
+	if len(os.Args) < 2 {
+		Logger.Fatalln("Please input calculation date: \n eg. ./smartstock_calc_static 2014-04-01\n")
+	}
+	calcDate = os.Args[1]
+	alerttableName = alerttableName + "." + calcDate
+	c.Query("drop series " + alerttableName)
 	Main()
 }
