@@ -5,12 +5,13 @@ import ConfigParser
 import base64
 import json
 import logging
+import os
 import traceback
 
 from flask import Flask, Response, request, session, redirect, url_for, render_template
 from influxdb import client as influxdb
-
 import xlwt
+
 
 username = None
 password = None
@@ -19,6 +20,7 @@ port = None
 user = None
 pswd = None
 schema = None
+reportcmd = None
 
 col_names = {'ticker.exchange':'股票代码.交易行', 'dataDate':'选股日期', 'dataTime':'选股时间', 'criteriaHit':'选股规则', 'sequence_number':'记录号', 'time':'记录时间'}
 
@@ -31,6 +33,7 @@ def loadConf():
     global user
     global pswd
     global schema
+    global reportcmd
     try:
         cfg = ConfigParser.ConfigParser()
         cfg.read('./ss_view.conf')
@@ -41,6 +44,7 @@ def loadConf():
         user = cfg.get('database', 'user')
         pswd = cfg.get('database', 'pswd')
         schema = cfg.get('database', 'schema')
+        reportcmd = cfg.get('service', 'reportcmd')
         print 'Load conf'
         logging.info('Load conf')
     except:
@@ -97,6 +101,37 @@ def logout():
         print 'Logout error'
         logging.error('Logout error')
 
+def initCriteria():
+    global host
+    global port
+    global user
+    global pswd
+    global schema
+    try:
+        criterias = [{
+                              'name': 'criteria',
+                              'columns': ['criteria'],
+                              'points': [['criteria1:X1_2 > 2,X2 > 3,Y1 = true,X3 < 0.2,X4 < 500000|criteria2:X1_1 > 2,X2 < -3,Y1 = false,Y2 = false,X3 < 0.2,X4 < 500000']]
+                              }]
+        init = False
+        try:
+            db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
+            result = db.query("select criteria from criteria limit 1")
+            init = False
+        except:
+            logging.info('Need initialize criteria data')
+            init = True
+        if init:
+            db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
+            db.write_points(criterias)
+            logging.info('Initialize criteria')
+        else:
+            logging.info('Not need initialize criteria')
+    except:
+        traceback.print_exc()
+        print 'Initialize criteria error'
+        logging.error('Initialize criteria error')  
+
 def last_criteria():
     global host
     global port
@@ -146,12 +181,13 @@ def build_criteria(data):
             criteria_list = []
             for key in criteria_dict.iterkeys():
                 criteria_list.append(key)
-                criteria_list.append(' : ')
+                criteria_list.append(':')
                 criteria_items = criteria_dict[key]
                 for criteria_item in criteria_items:
                     for item in criteria_item:
                         criteria_list.append(item)
                         criteria_list.append(' ')
+                    del criteria_list[len(criteria_list) - 1]
                     criteria_list.append(',')
                 del criteria_list[len(criteria_list) - 1]
                 criteria_list.append('|')
@@ -167,7 +203,7 @@ def build_criteria(data):
         print 'Build criteria error'
         logging.error('Build criteria error')
         return '{}'
-
+    
 
 @app.route('/criteria', methods=['GET', 'POST'])
 def criteria():
@@ -202,7 +238,7 @@ def alert(exchange, date, time):
             return '{}', 403
         else:
             db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
-            result = db.query("select * from alerts where dataDate = '%s' and dataTime > '%s'" % (date, time))
+            result = db.query("select * from alerts.%s where dataDate = '%s' and dataTime > '%s'" % (date, date, time))
             return json.dumps(result)
     except:
         traceback.print_exc()
@@ -217,10 +253,17 @@ def report(exchange, date):
     global pswd
     global schema
     global col_names
+    global reportcmd
     try:
         if not session.has_key('user'):
             return '{}', 403
         else:
+            try:
+                reportcmdtag = os.system('%s %s' % (reportcmd, date))
+                logging.info("Report service: %d" % (reportcmdtag))
+            except:
+                print 'error-----------'
+                traceback.print_exc()
             wb = xlwt.Workbook(encoding='utf-8')
             sheet = wb.add_sheet('围数资本选股报告：' + str(date), cell_overwrite_ok=True)
             sheet.col(0).width = 10000
@@ -232,7 +275,7 @@ def report(exchange, date):
             sheet.col(5).width = 10000
             sheet.col(5).hidden = True
             db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
-            result = db.query("select * from alerts where dataDate = '%s'" % (date))
+            result = db.query("select * from alerts.%s where dataDate = '%s'" % (date, date))
             if (result == None) or (len(result) < 1):
                 sheet.write(0, 0, col_names.values()[0])
                 sheet.write(0, 1, col_names.values()[1])
@@ -267,12 +310,13 @@ def report(exchange, date):
                     sheet.write(row, 5, data[int(col_seqs[5])])
                     row = row + 1
                 sheet.flush_row_data()
-            wb.save('./static/report' + str(date) + '.xls')
-            return redirect('/static/report' + str(date) + '.xls')
+            wb.save('./static/report/' + str(date) + '.xls')
+            return redirect('/static/report/' + str(date) + '.xls')
     except:
         traceback.print_exc()
         print 'Report error'
         logging.error('Report error')
+        return '报告不存在或者异常'
 
 # Main function
 if __name__ == '__main__':
@@ -280,7 +324,9 @@ if __name__ == '__main__':
     logging.basicConfig(filename='./ss_view.log', level=logging.INFO, filemode='a', format='%(asctime)s - %(levelname)s: %(message)s')
     # Load configuration
     loadConf()
+    # Initialize criteria
+    initCriteria()
     # Loop server
     print 'Run server'
     logging.info('Run server')
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=80)
