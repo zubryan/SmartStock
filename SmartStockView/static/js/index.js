@@ -1,4 +1,5 @@
-var lastTime
+var lastTime = "00:00:00"
+var criteriasNum = 0
 var sequence = {}
 var exchanges = {
     "XSHG": "sh",
@@ -32,7 +33,7 @@ function doLogin() {
     $("#login").show()
 }
 
-$("#loginForm").on("submit", function(event) {
+$("#login-form").on("submit", function(event) {
     var form = event.target
     var username = form.username.value
     var password = form.password.value
@@ -49,6 +50,7 @@ $("#loginForm").on("submit", function(event) {
 function init() {
     initReport()
     initAlert()
+    initCriteria()
 }
 
 function initReport() {
@@ -62,7 +64,7 @@ function initReport() {
             d = "0" + d
         }
         var dateStr = year + "-" + month + "-" + d
-        $("#reportList").append('<li><a href="/report/a/' + dateStr + '.txt">' + dateStr + ' 报告</a></li>')
+        $("#reportList").append('<li><a href="/report/a/' + dateStr + '.xls">' + dateStr + ' 报告</a></li>')
     }
 }
 
@@ -185,12 +187,187 @@ function appendData() {
     }).fail(doLogin)
 }
 
-
-
 function needReadEventBind() {
     $(".need-read").on("click", function(event) {
         event.currentTarget.setAttribute("class", null)
         refreshUnread()
+    })
+}
+
+function initCriteria() {
+    appendCriteria("criteria1")
+    appendCriteria("criteria2")
+    loadCurrentCriterias()
+    $(".add-criteria").on("click", function(event) {
+        var criteriaId = event.target.getAttribute("criteria-id")
+        appendCriteria("criteria" + criteriaId)
+    })
+    $("#reset-criteria").on("click", resetCriteria)
+    $("#submit-criteria").on("click", submitCriteria)
+}
+
+function appendCriteria(id) {
+    var criteria = '<div>'
+    criteria += buildParams()
+    criteria += buildOperators(false)
+    criteria += buildValue(false)
+    criteria += '</div>'
+    criteriasNum++
+    $("#" + id).append(criteria)
+    $(".param").on("change", paramChanged)
+}
+
+function paramChanged(event) {
+    var boolValues = ["y1", "y2"]
+    var num = event.target.name.substr(5)
+    if (boolValues.indexOf(event.target.value) != -1) {
+        $("[name=operator" + num + "]")[0].outerHTML = buildOperators(true, num)
+        $("[name=value" + num + "]")[0].outerHTML = buildValue(true, num)
+    } else {
+        $("[name=operator" + num + "]")[0].outerHTML = buildOperators(false, num)
+        $("[name=value" + num + "]")[0].outerHTML = buildValue(false, num)
+    }
+}
+
+function resetCriteria() {
+    $(".criterias").html("")
+    criteriasNum = 0
+    appendCriteria("criteria1")
+    appendCriteria("criteria2")
+}
+
+function buildParams() {
+    var params = '<select class="param" name="param' + criteriasNum + '">'
+    params += '<option value="x1_1">X11</option>'
+    params += '<option value="x1_2">X12</option>'
+    params += '<option value="x2">X2</option>'
+    params += '<option value="x3">X3</option>'
+    params += '<option value="x4">X4</option>'
+    params += '<option value="y1">Y1</option>'
+    params += '<option value="y2">Y2</option>'
+    params += '</select>'
+    return params
+}
+
+function buildOperatorOptions(onlyEquals) {
+    var options = ""
+    if (onlyEquals) {
+        options += '<option value="=">=</option>'
+    } else {
+        options += '<option value="<">&lt;</option>'
+        options += '<option value="<=">&lt;=</option>'
+        options += '<option value="=">=</option>'
+        options += '<option value=">">&gt;</option>'
+        options += '<option value=">=">&gt;=</option>'
+    }
+    return options
+}
+
+function buildOperators(onlyEquals, num) {
+    if (num === undefined) {
+        num = criteriasNum
+    }
+    var operators = '<select class="operator" name="operator' + num + '">'
+    operators += buildOperatorOptions(onlyEquals)
+    operators += '</select>'
+    return operators
+}
+
+function buildValue(bool, num) {
+    var value = ""
+    if (num === undefined) {
+        num = criteriasNum
+    }
+    if (bool) {
+        value += '<select class="value" name="value' + num + '">'
+        value += '<option value="true">true</option>'
+        value += '<option value="false">false</option>'
+        value += '</select>'
+    } else {
+        value += '<input class="value" name="value' + num + '" type="text" />'
+    }
+    return value
+}
+
+function submitCriteria() {
+    var data = {
+        "criteria1": [],
+        "criteria2": []
+    }
+    data['criteria1'] = buildCriteria(1)
+    data['criteria2'] = buildCriteria(2)
+    $.ajax({
+        "url": "/criteria",
+        "type": "POST",
+        "contentType": "application/json",
+        "data": JSON.stringify(data),
+        "success": function() {
+            alert("添加成功")
+            resetCriteria()
+            loadCurrentCriterias()
+        },
+        "fail": function() {
+            alert("添加失败")
+        }
+    })
+
+}
+
+function buildCriteria(id) {
+    var params = $("#criteria" + id + " .param")
+    var operators = $("#criteria" + id + " .operator")
+    var values = $("#criteria" + id + " .value")
+    var result = {}
+    for (var i = 0; i < params.length; i++) {
+        var paramNum = params[i].name.substr(5)
+        if (result[paramNum] === undefined) {
+            result[paramNum] = {}
+        }
+        result[paramNum]['param'] = params[i].value
+
+        var operatorNum = operators[i].name.substr(8)
+        if (result[operatorNum] === undefined) {
+            result[operatorNum] = {}
+        }
+        result[operatorNum]['operator'] = operators[i].value
+
+        var valueNum = values[i].name.substr(5)
+        if (result[valueNum] === undefined) {
+            result[valueNum] = {}
+        }
+        result[valueNum]['value'] = values[i].value
+    }
+
+    var points = []
+    for (var key in result) {
+        var point = [result[key]['param'], result[key]['operator'], result[key]['value']]
+        points.push(point)
+    }
+    return points
+}
+
+function loadCurrentCriterias() {
+    $.getJSON("/criteria", function(data) {
+        if (data['criteria1'] !== undefined) {
+            var criteria1 = ""
+            for (var i = 0; i < data['criteria1'].length; i++) {
+                criteria1 += data['criteria1'][i][0].toUpperCase().replace("_", "")
+                criteria1 += data['criteria1'][i][1]
+                criteria1 += data['criteria1'][i][2]
+                criteria1 += ","
+            }
+            $("#currentCriteria1").html(criteria1.substr(0, criteria1.length - 1))
+        }
+        if (data['criteria2'] !== undefined) {
+            var criteria2 = ""
+            for (var i = 0; i < data['criteria2'].length; i++) {
+                criteria2 += data['criteria2'][i][0].toUpperCase().replace("_", "")
+                criteria2 += data['criteria2'][i][1]
+                criteria2 += data['criteria2'][i][2]
+                criteria2 += ","
+            }
+            $("#currentCriteria2").html(criteria2.substr(0, criteria2.length - 1))
+        }
     })
 }
 

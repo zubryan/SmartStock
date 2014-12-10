@@ -13,7 +13,7 @@
             cursor: pointer;
             font-size: 18px;
         }
-        form {
+        #login-form {
             margin: auto;
             max-width: 330px;
             margin-top: 20px;
@@ -52,7 +52,7 @@
       </div>
     </header>
     <div id="login" class="container">
-        <form id="loginForm" role="form" class="horizon-form">
+        <form id="login-form" role="form" class="horizon-form">
             <div class="input-group">
                 <span class="input-group-addon">用户名</span>
                 <input type="text" class="form-control" name="username" placeholder="用户名">
@@ -80,6 +80,30 @@
             <thead></thead>
             <tbody></tbody>
         </table>
+        <h4>修改条件</h4>
+        <div>
+            <p>
+                备注：<br/>
+                （1）  量比：当日成交量/5日成交均量（前5日）=X11;当日成交量/10日成交均量（前10日）=X12;<br/>
+                （2） 涨跌幅=X2；<br/>
+                （3） 均线系统：5日均价&gt;=10日均价&gt;=20日均价=Ytrue1; 5日均价&lt;=10日均价&lt;=20日均价= Ytrue2;<br/>
+                （4） |MACD|=X3;<br/>
+                （5） 市值=X4;<br/>
+            </p>
+            <h5>现有条件</h5>
+            <ul>
+                <li id="currentCriteria1"></li>
+                <li id="currentCriteria2"></li>
+            </ul>
+            <h5>条件1<button criteria-id="1" class="add-criteria">添加条件</button></h5>
+            <div id="criteria1" class="criterias">
+            </div>
+            <h5>条件2<button criteria-id="2" class="add-criteria">添加条件</button></h5>
+            <div id="criteria2" class="criterias">
+            </div>
+            <button id="submit-criteria" class="btn btn-primary">应用</button>
+            <button id="reset-criteria" class="btn">重置条件</button>
+        </div>
     </div>
 
     <!-- <embed id="beep" src="/static/sound/beep.wav" autostart="false" width="0" height="0" enablejavascript="true"/> -->
