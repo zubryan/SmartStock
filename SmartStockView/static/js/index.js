@@ -238,13 +238,13 @@ function resetCriteria() {
 
 function buildParams() {
     var params = '<select class="param" name="param' + criteriasNum + '">'
-    params += '<option value="x1_1">X11</option>'
-    params += '<option value="x1_2">X12</option>'
-    params += '<option value="x2">X2</option>'
-    params += '<option value="x3">X3</option>'
-    params += '<option value="x4">X4</option>'
-    params += '<option value="y1">Y1</option>'
-    params += '<option value="y2">Y2</option>'
+    params += '<option value="X1_1">X11</option>'
+    params += '<option value="X1_2">X12</option>'
+    params += '<option value="X2">X2</option>'
+    params += '<option value="X3">X3</option>'
+    params += '<option value="X4">X4</option>'
+    params += '<option value="Y1">Y1</option>'
+    params += '<option value="Y2">Y2</option>'
     params += '</select>'
     return params
 }
@@ -349,7 +349,7 @@ function buildCriteria(id) {
 function loadCurrentCriterias() {
     $.getJSON("/criteria", function(data) {
         if (data['criteria1'] !== undefined) {
-            var criteria1 = ""
+            var criteria1 = "条件1: "
             for (var i = 0; i < data['criteria1'].length; i++) {
                 criteria1 += data['criteria1'][i][0].toUpperCase().replace("_", "")
                 criteria1 += data['criteria1'][i][1]
@@ -359,7 +359,7 @@ function loadCurrentCriterias() {
             $("#currentCriteria1").html(criteria1.substr(0, criteria1.length - 1))
         }
         if (data['criteria2'] !== undefined) {
-            var criteria2 = ""
+            var criteria2 = "条件2: "
             for (var i = 0; i < data['criteria2'].length; i++) {
                 criteria2 += data['criteria2'][i][0].toUpperCase().replace("_", "")
                 criteria2 += data['criteria2'][i][1]

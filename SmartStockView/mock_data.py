@@ -11,7 +11,7 @@ data["columns"] = ["ticker.exchange", "dataDate", "dataTime", "criteriaHit"]
 data["points"] = [["", "", "", ""]]
 body = [data]
 
-d = datetime(2014, 12, 8, 00, 16, 26)
+d = datetime(2014, 12, 10, 00, 16, 26)
 n = 600000
 m = 1
 while True:
