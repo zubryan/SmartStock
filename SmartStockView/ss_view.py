@@ -10,6 +10,7 @@ import traceback
 from flask import Flask, Response, request, session, redirect, url_for, render_template
 from influxdb import client as influxdb
 
+import xlwt
 
 username = None
 password = None
@@ -18,6 +19,8 @@ port = None
 user = None
 pswd = None
 schema = None
+
+col_names = {'ticker.exchange':'股票代码.交易行', 'dataDate':'选股日期', 'dataTime':'选股时间', 'criteriaHit':'选股规则', 'sequence_number':'记录号', 'time':'记录时间'}
 
 # Load configuration
 def loadConf():
@@ -46,7 +49,7 @@ def loadConf():
         logging.error('Load conf error')
 
 # Web server
-app = Flask(__name__, template_folder="templates", static_folder="static")
+app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = 'why would I tell you my secret key?'
 
 
@@ -54,9 +57,9 @@ app.secret_key = 'why would I tell you my secret key?'
 def index():
     return render_template('index.html')
 
-@app.route('/default')
-def default():
-    return 'Smart Stock'
+@app.route('/ping')
+def ping():
+    return 'Smart Stock Ping'
 
 @app.route('/login')
 def login():
@@ -88,11 +91,104 @@ def logout():
         if session.has_key('user'):
             del session['user']
         logging.info('Logout')
-        return redirect("/")
+        return redirect('/')
     except:
         traceback.print_exc()
         print 'Logout error'
         logging.error('Logout error')
+
+def last_criteria():
+    global host
+    global port
+    global user
+    global pswd
+    global schema
+    try:
+        db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
+        result = db.query("select criteria from criteria limit 1")
+        criterias = result[0]['points'][0][2].split('|')
+        logging.info('Last criteria: ' + result[0]['points'][0][2])
+        criteria_dict = {}
+        for criteria in criterias:
+            criteria = criteria.strip()
+            criteria_name = criteria.split(':')[0].strip()
+            criteria_bodys = criteria.split(':')[1].strip().split(',')
+            criteria_dict[criteria_name] = []
+            for criteria_body in criteria_bodys:
+                criteria_node = []
+                criteria_items = criteria_body.split(' ')
+                for criteria_item in criteria_items:
+                    if len(criteria_item.strip()) > 0:
+                        criteria_node.append(criteria_item.strip())
+                criteria_dict[criteria_name].append(criteria_node)
+        return json.dumps(criteria_dict)
+    except:
+        traceback.print_exc()
+        print 'Last criteria error'
+        logging.error('Last criteria error')
+        return '{}'
+
+def build_criteria(data):
+    global host
+    global port
+    global user
+    global pswd
+    global schema
+    try:
+        db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
+        criterias = [{
+                              'name': 'criteria',
+                              'columns': ['criteria'],
+                              'points': [[]]
+                              }]
+        if data != None:
+            criteria_dict = json.loads(data)
+            criteria_list = []
+            for key in criteria_dict.iterkeys():
+                criteria_list.append(key)
+                criteria_list.append(' : ')
+                criteria_items = criteria_dict[key]
+                for criteria_item in criteria_items:
+                    for item in criteria_item:
+                        criteria_list.append(item)
+                        criteria_list.append(' ')
+                    criteria_list.append(',')
+                del criteria_list[len(criteria_list) - 1]
+                criteria_list.append('|')
+            del criteria_list[len(criteria_list) - 1]
+            criterias[0]['points'][0].append(''.join(criteria_list))
+            db.write_points(criterias)
+            logging.info('Build criteria: ' + ''.join(criteria_list))
+            return last_criteria()
+        else:
+            return '{}'
+    except:
+        traceback.print_exc()
+        print 'Build criteria error'
+        logging.error('Build criteria error')
+        return '{}'
+
+
+@app.route('/criteria', methods=['GET', 'POST'])
+def criteria():
+    global host
+    global port
+    global user
+    global pswd
+    global schema
+    if not session.has_key('user'):
+            return '{}', 403
+    else:
+        try:
+            db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
+            if request.method == 'GET':
+                return last_criteria()
+            else:
+                return build_criteria(request.data)
+        except:
+            traceback.print_exc()
+            print 'Criteria error'
+            logging.error('Criteria error')
 
 @app.route('/alert/<exchange>/<date>/<time>')
 def alert(exchange, date, time):
@@ -103,7 +199,7 @@ def alert(exchange, date, time):
     global schema
     try:
         if not session.has_key('user'):
-            return "{}", 403
+            return '{}', 403
         else:
             db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
             result = db.query("select * from alerts where dataDate = '%s' and dataTime > '%s'" % (date, time))
@@ -113,28 +209,66 @@ def alert(exchange, date, time):
         print 'Alert error'
         logging.error('Alert error')
 
-@app.route('/report/<exchange>/<date>')
+@app.route('/report/<exchange>/<date>.xls')
 def report(exchange, date):
     global host
     global port
     global user
     global pswd
     global schema
+    global col_names
     try:
         if not session.has_key('user'):
-            return "{}", 403
+            return '{}', 403
         else:
+            wb = xlwt.Workbook(encoding='utf-8')
+            sheet = wb.add_sheet('围数资本选股报告：' + str(date), cell_overwrite_ok=True)
+            sheet.col(0).width = 10000
+            sheet.col(1).width = 10000
+            sheet.col(2).width = 10000
+            sheet.col(2).hidden = True
+            sheet.col(3).width = 10000
+            sheet.col(4).width = 50000
+            sheet.col(5).width = 10000
+            sheet.col(5).hidden = True
             db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
             result = db.query("select * from alerts where dataDate = '%s'" % (date))
-            def generate():
+            if (result == None) or (len(result) < 1):
+                sheet.write(0, 0, col_names.values()[0])
+                sheet.write(0, 1, col_names.values()[1])
+                sheet.write(0, 2, col_names.values()[2])
+                sheet.write(0, 3, col_names.values()[3])
+                sheet.write(0, 4, col_names.values()[4])
+                sheet.write(0, 5, col_names.values()[5])
+                sheet.flush_row_data()
+            else:
                 cols = result[0]['columns']
                 datas = result[0]['points']
-                yield '%s,%s,%s,%s,%s,%s' % (cols[0],cols[1],cols[2],cols[3],cols[4],cols[5])
-                yield '\n'
+                col_seqs = ''
+                col_keys = col_names.keys()
+                for ca in xrange(0, len(col_keys)):
+                    for cb in xrange(0, len(cols)):
+                        if cols[cb] == col_keys[ca]:
+                            col_seqs = col_seqs + str(cb)
+                            break
+                sheet.write(0, 0, col_names.values()[0])
+                sheet.write(0, 1, col_names.values()[1])
+                sheet.write(0, 2, col_names.values()[2])
+                sheet.write(0, 3, col_names.values()[3])
+                sheet.write(0, 4, col_names.values()[4])
+                sheet.write(0, 5, col_names.values()[5])
+                row = 1
                 for data in datas:
-                    yield '%s,%s,%s,%s,%s,%s' % (data[0],data[1],data[2],data[3],data[4],data[5])
-                    yield '\n'
-            return Response(generate(), mimetype='text/csv')
+                    sheet.write(row, 0, data[int(col_seqs[0])])
+                    sheet.write(row, 1, data[int(col_seqs[1])])
+                    sheet.write(row, 2, data[int(col_seqs[2])])
+                    sheet.write(row, 3, data[int(col_seqs[3])])
+                    sheet.write(row, 4, data[int(col_seqs[4])])
+                    sheet.write(row, 5, data[int(col_seqs[5])])
+                    row = row + 1
+                sheet.flush_row_data()
+            wb.save('./static/report' + str(date) + '.xls')
+            return redirect('/static/report' + str(date) + '.xls')
     except:
         traceback.print_exc()
         print 'Report error'
@@ -149,4 +283,4 @@ if __name__ == '__main__':
     # Loop server
     print 'Run server'
     logging.info('Run server')
-    app.run(debug=False)
+    app.run(host='0.0.0.0', port=5000)
