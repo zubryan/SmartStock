@@ -42,7 +42,13 @@ func main() {
 	STOCKFILE["FILE"], _ = cfg.String("FILE", "stocklist")
 
 	var stock Stockslice
-	req, err := http.NewRequest("GET", APICONF["url"]+"/"+APICONF["master"]+"/"+APICONF["version"]+"/getSecID.json?ticker=ticker&field=secID,listStatusCD,exchangeCD", nil)
+
+	reqpath := APICONF["url"] + "/" + APICONF["master"]
+	if len(APICONF["version"]) > 0 {
+		reqpath += "/" + APICONF["version"]
+	}
+	reqpath += "/getSecID.json?ticker=ticker&field=secID,listStatusCD,exchangeCD"
+	req, err := http.NewRequest("GET", reqpath, nil)
 	if err != nil {
 		panic(err)
 	}

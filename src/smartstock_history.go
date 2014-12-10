@@ -113,8 +113,8 @@ func getHistData(sec Stock) (MktEqudslice, error) {
 		SetStockStatus(sec.Idx, STATUS_RUNNING, "Calling DataAPI...")
 
 		body, err := CallDataAPI(
-			"market",
-			"1.0.0",
+			APICONF["market"],
+			APICONF["version"],
 			api,
 			[]string{
 				"secID=" + sec.Ticker_exchange,

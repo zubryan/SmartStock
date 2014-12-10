@@ -399,8 +399,8 @@ func getRefdataDataAPI(ticker string, Idx int, date string) (MktEqudRefslice, er
 	date = strings.Join(strings.Split(date, "-"), "")
 	for !ok && retry > 0 {
 		body, err := CallDataAPI(
-			"market",
-			"1.0.0",
+			APICONF["market"],
+			APICONF["version"],
 			api,
 			[]string{
 				"secID=" + ticker,
@@ -499,9 +499,18 @@ func GetCurrentCriteria() string {
 		Logger.Println(query + "\nNo Data")
 		return ""
 	}
-	//columns := series[0].GetColumns()
+
+	columns := series[0].GetColumns()
+	var idxCriteria int
+	for i, _ := range columns {
+		switch columns[i] {
+		case "criteria":
+			idxCriteria = i
+		default:
+		}
+	}
 	points := series[0].GetPoints()
-	f, ok := points[0][0].(string)
+	f, ok := points[0][idxCriteria].(string)
 	if ok {
 		return f
 	} else {
@@ -534,7 +543,7 @@ func calcRealTimeMktData(mds []Stock, ch chan int) {
 				if !pRef.isAlertRaised {
 					StartProcess(idx)
 					if HaveAlerts(idx, criterias) {
-						SetStockStatus(idx, STATUS_DONE, "Alert"+pRef.AlertMsg)
+						SetStockStatus(idx, STATUS_DONE, pRef.AlertMsg)
 					} else {
 						SetStockStatus(idx, STATUS_READY, "Standby\nLstTime:"+Ref[idx].dataTime)
 					}
@@ -685,7 +694,7 @@ loopMktdata:
 
 func genAlert(Idx int, cri *Criteria, m *Metrics, params []string) {
 	var alert Alert
-	alert.criteriaHit = Ref[Idx].shortName + "\n@" + Ref[Idx].dataTime + ":" + (*cri).name
+	alert.criteriaHit = Ref[Idx].shortName + " Hit " + cri.name + ":" + cri.criteria + "\n@" + Ref[Idx].dataTime + "\n"
 	alert.criteriaHit += fmt.Sprintf(" X11:%.2f X12:%.2f X2:%.2f X3:%.3f X4:%.0f Y1:%s Y2:%s ",
 		(*m).X1_1.Float64(),
 		(*m).X1_2.Float64(),
