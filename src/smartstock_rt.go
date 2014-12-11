@@ -73,8 +73,8 @@ func process(mds []Stock, ch chan int) {
 		}
 		for !ok && retry > 0 {
 			body, err = CallDataAPI(
-				"market",
-				"1.0.0",
+				APICONF["market"],
+				APICONF["version"],
 				"getTickRTSnapshot.json",
 				[]string{
 					"securityID=" + securityIds,
