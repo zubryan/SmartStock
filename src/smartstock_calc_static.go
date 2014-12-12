@@ -819,6 +819,6 @@ func main() {
 	}
 	calcDate = os.Args[1]
 	alerttableName = alerttableName + "." + calcDate
-	c.Query("drop series " + alerttableName)
+	c.Query("drop series \"" + alerttableName + "\"")
 	Main()
 }
