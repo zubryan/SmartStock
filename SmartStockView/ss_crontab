@@ -1,0 +1,11 @@
+50 7 * * 1-7 cd /root/SmartStock/src/ && ./importstock
+0 8 * * 1-7 cd /root/SmartStock/src/ && ./smartstock_history
+20 9 * * 1-7 cd /root/SmartStock/src/ && ./smartstock_rt
+25 9 * * 1-7 cd /root/SmartStock/src/ && ./smartstock_calc
+10 9 * * 1-7 killall -9 smartstock_history
+30 16 * * 1-7 killall -9 smartstock_rt
+30 16 * * 1-7 killall -9 smartstock_calc
+05 5 * * 1-7 /sbin/stop smart-stock-view
+10 5 * * 1-7 curl -X DELETE 'http://172.16.73.16:8086/db/smartstock?u=root&p=root'
+15 5 * * 1-7 rm -f /opt/SmartStockView/static/report/*.xls
+01 9 * * 1-7 /sbin/start smart-stock-view
