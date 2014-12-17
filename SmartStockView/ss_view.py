@@ -6,6 +6,7 @@ import base64
 import json
 import logging
 import os
+import platform
 import traceback
 
 from flask import Flask, Response, request, session, redirect, url_for, render_template
@@ -20,6 +21,7 @@ port = None
 user = None
 pswd = None
 schema = None
+reportdir = None
 reportcmd = None
 
 col_names = {'ticker.exchange':'股票代码.交易行', 'dataDate':'选股日期', 'dataTime':'选股时间', 'criteriaHit':'选股规则', 'sequence_number':'记录号', 'time':'记录时间'}
@@ -33,10 +35,11 @@ def loadConf():
     global user
     global pswd
     global schema
+    global reportdir
     global reportcmd
     try:
         cfg = ConfigParser.ConfigParser()
-        cfg.read('./ss_view.conf')
+        cfg.read('/opt/SmartStockView/ss_view.conf')
         username = cfg.get('account', 'username')
         password = cfg.get('account', 'password')
         host = cfg.get('database', 'host')
@@ -44,6 +47,7 @@ def loadConf():
         user = cfg.get('database', 'user')
         pswd = cfg.get('database', 'pswd')
         schema = cfg.get('database', 'schema')
+        reportdir = cfg.get('service', 'reportdir')
         reportcmd = cfg.get('service', 'reportcmd')
         print 'Load conf'
         logging.info('Load conf')
@@ -109,6 +113,21 @@ def initCriteria():
     global schema
     try:
         criterias = [{
+                              'name': 'criteria',
+                              'columns': ['criteria'],
+                              'points': [['criteria1:X1_2 > 2,X2 > 3,Y1 = true,X3 < 0.2,X4 < 500000|criteria2:X1_1 > 2,X2 < -3,Y1 = false,Y2 = false,X3 < 0.2,X4 < 500000']]
+                              }]
+        try:
+            if os.path.exists('/opt/SmartStockView/ss_view.criterias'):
+                cf = open('/opt/SmartStockView/ss_view.criterias', 'r')
+                cs = eval(cf.readline())
+                if (cs != None) and (len(cs) > 0):
+                    logging.info('Loaded criteria: %s' % (str(cs)))
+                    criterias = cs
+        except:
+            traceback.print_exc()
+            print 'Loaded criteria error'
+            criterias = [{
                               'name': 'criteria',
                               'columns': ['criteria'],
                               'points': [['criteria1:X1_2 > 2,X2 > 3,Y1 = true,X3 < 0.2,X4 < 500000|criteria2:X1_1 > 2,X2 < -3,Y1 = false,Y2 = false,X3 < 0.2,X4 < 500000']]
@@ -194,6 +213,15 @@ def build_criteria(data):
             del criteria_list[len(criteria_list) - 1]
             criterias[0]['points'][0].append(''.join(criteria_list))
             db.write_points(criterias)
+            try:
+                cf = open('/opt/SmartStockView/ss_view.criterias', 'w')
+                cf.write(str(criterias))
+                cf.flush()
+                cf.close()
+                logging.info('Saved criteria: %s' % (str(criterias)))
+            except:
+                traceback.print_exc()
+                print 'Saved criteria error'
             logging.info('Build criteria: ' + ''.join(criteria_list))
             return last_criteria()
         else:
@@ -238,12 +266,14 @@ def alert(exchange, date, time):
             return '{}', 403
         else:
             db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
-            result = db.query("select * from alerts.%s where dataDate = '%s' and dataTime > '%s'" % (date, date, time))
+            result = db.query(''' select * from "alerts.%s" where dataTime > '%s' ''' % (date, time))
+            logging.info(''' select * from "alerts.%s" where dataTime > '%s' ''' % (date, time))
             return json.dumps(result)
     except:
         traceback.print_exc()
         print 'Alert error'
         logging.error('Alert error')
+        return ''' [{"points": [], "name": "alerts.empty", "columns": ["time", "sequence_number", "ticker.exchange", "dataDate", "dataTime", "criteriaHit"]}] '''
 
 @app.route('/report/<exchange>/<date>.xls')
 def report(exchange, date):
@@ -253,16 +283,35 @@ def report(exchange, date):
     global pswd
     global schema
     global col_names
+    global reportdir
     global reportcmd
     try:
         if not session.has_key('user'):
             return '{}', 403
         else:
+            criterias = None
+            suffix = None
             try:
-                reportcmdtag = os.system('%s %s' % (reportcmd, date))
+                db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
+                result = db.query("select criteria from criteria limit 1")
+                criterias = result[0]['points'][0][2].strip()
+                suffix = base64.b64encode(criterias)
+                if os.path.exists('/opt/SmartStockView/static/report/' + str(date) + '_' + suffix + '.xls'):
+                    return redirect('/static/report/' + str(date) + '_' + suffix + '.xls')
+            except:
+                traceback.print_exc()
+                print 'Report error'
+                logging.error('Report error')
+                return '<html><head><title>报告错误！</title></head><body><h1>报告错误！</h1></body></html>'
+            try:
+                reportop = '&'
+                if platform.system().strip() == 'Linux':
+                    reportop = ';'
+                reportcmdtag = os.system('%s %s %s %s' % (reportdir, reportop, reportcmd, date))
+                logging.info("Report service: %s %s %s %s" % (reportdir, reportop, reportcmd, date))
                 logging.info("Report service: %d" % (reportcmdtag))
             except:
-                print 'error-----------'
+                logging.error('Report service error: ' + '%s %s' % (reportcmd, date))
                 traceback.print_exc()
             wb = xlwt.Workbook(encoding='utf-8')
             sheet = wb.add_sheet('围数资本选股报告：' + str(date), cell_overwrite_ok=True)
@@ -275,7 +324,7 @@ def report(exchange, date):
             sheet.col(5).width = 10000
             sheet.col(5).hidden = True
             db = influxdb.InfluxDBClient(host, int(port), user, pswd, schema)
-            result = db.query("select * from alerts.%s where dataDate = '%s'" % (date, date))
+            result = db.query(''' select * from "alerts.%s" where dataDate = '%s' ''' % (date, date))
             if (result == None) or (len(result) < 1):
                 sheet.write(0, 0, col_names.values()[0])
                 sheet.write(0, 1, col_names.values()[1])
@@ -310,18 +359,18 @@ def report(exchange, date):
                     sheet.write(row, 5, data[int(col_seqs[5])])
                     row = row + 1
                 sheet.flush_row_data()
-            wb.save('./static/report/' + str(date) + '.xls')
-            return redirect('/static/report/' + str(date) + '.xls')
+            wb.save('/opt/SmartStockView/static/report/' + str(date) + '_' + suffix + '.xls')
+            return redirect('/static/report/' + str(date) + '_' + suffix + '.xls')
     except:
         traceback.print_exc()
         print 'Report error'
         logging.error('Report error')
-        return '报告不存在或者异常'
+        return '<html><head><title>报告不存在！</title></head><body><h1>报告不存在！</h1></body></html>'
 
 # Main function
 if __name__ == '__main__':
     # Initialize logging
-    logging.basicConfig(filename='./ss_view.log', level=logging.INFO, filemode='a', format='%(asctime)s - %(levelname)s: %(message)s')
+    logging.basicConfig(filename='/datayes/log/ss_view.log', level=logging.INFO, filemode='a', format='%(asctime)s - %(levelname)s: %(message)s')
     # Load configuration
     loadConf()
     # Initialize criteria

@@ -50,12 +50,11 @@ $("#login-form").on("submit", function(event) {
 function init() {
     initReport()
     initAlert()
-    initCriteria()
 }
 
 function initReport() {
     var currentDate = new Date()
-    for (var i = 0; i < 5; i++) {
+    for (var i = 1; i < 6; i++) {
         var date = new Date(currentDate.getTime() - (86400000 * i)) // 后推i天
         var year = date.getFullYear()
         var month = date.getMonth() + 1
@@ -126,9 +125,10 @@ function initAlert() {
                 tbodyHTML += "</tr>"
             }
             tbody.html(tbodyHTML)
-            lastTime = points[0][sequence['dataTime']]
+            if (points.length > 0) { lastTime = points[0][sequence['dataTime']]}
             needReadEventBind()
         }
+        initCriteria()
         setInterval(appendData, 1000)
     }).fail(doLogin)
 }
@@ -218,7 +218,7 @@ function appendCriteria(id) {
 }
 
 function paramChanged(event) {
-    var boolValues = ["y1", "y2"]
+    var boolValues = ["Y1", "Y2"]
     var num = event.target.name.substr(5)
     if (boolValues.indexOf(event.target.value) != -1) {
         $("[name=operator" + num + "]")[0].outerHTML = buildOperators(true, num)
