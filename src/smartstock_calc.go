@@ -652,8 +652,8 @@ loopMktdata:
 		prcChg, _ = p[idxPriceChgPct].(float64)
 		volDec.SetFloat64(volume)
 		MinuteFromOpen := getMinuteFromOpen(pRef.dataTime)
-		(*m).X1_1 = calcX1_1(&volDec, &pRef.volsum5, &MinuteFromOpen, &TotalMinute)
-		(*m).X1_2 = calcX1_2(&volDec, &pRef.volsum10, &MinuteFromOpen, &TotalMinute)
+		(*m).X1_1 = calcX1_1(&volDec, &pRef.volsum5, &TotalMinute, &TotalMinute)
+		(*m).X1_2 = calcX1_2(&volDec, &pRef.volsum10, &TotalMinute, &TotalMinute)
 
 		(*m).X2.SetFloat64(prcChg)
 
