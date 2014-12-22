@@ -124,6 +124,8 @@ var (
 )
 
 var Ref []Refdata
+var c = GetNewDbClient()
+var TradeTimeWindows []string = []string{"09:30", "11:30", "13:00", "15:00"}
 
 func isHitCriteria(m *Metrics, criteria string) bool {
 	result := true
@@ -435,8 +437,6 @@ func getRefdataDataAPI(ticker string, Idx int, date string) (MktEqudRefslice, er
 	return refdata, nil
 }
 
-var c = GetNewDbClient()
-
 func loadRefData(mds []Stock, ch chan int) {
 	// c := GetNewDbClient()
 	var err error
@@ -651,7 +651,7 @@ loopMktdata:
 		lstprice, _ = p[idxlastPrice].(float64)
 		prcChg, _ = p[idxPriceChgPct].(float64)
 		volDec.SetFloat64(volume)
-		MinuteFromOpen := getMinuteFromOpen(pRef.dataTime)
+		//MinuteFromOpen := getMinuteFromOpen(pRef.dataTime)
 		(*m).X1_1 = calcX1_1(&volDec, &pRef.volsum5, &TotalMinute, &TotalMinute)
 		(*m).X1_2 = calcX1_2(&volDec, &pRef.volsum10, &TotalMinute, &TotalMinute)
 
@@ -740,8 +740,6 @@ func calcX3(lstprc, prevEMAS, prevEMAL, prevDEA *Dec) Dec {
 	Macd.Sub(&Dif, &Dea)
 	return *new(Dec).Abs(new(Dec).Mul(&Macd, New(2)).Round(7))
 }
-
-var TradeTimeWindows []string = []string{"09:30", "11:30", "13:00", "15:00"}
 
 func TotalMinute() Dec {
 	var v int64
