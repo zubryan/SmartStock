@@ -81,7 +81,7 @@ func process(mds []Stock, ch chan int) {
 					"field=" + strings.Join(TickRTSnapshotFields[:], ","),
 				})
 			if err != nil {
-				Logger.Print(string(body))
+				//Logger.Print(string(body))
 				for i := range mds {
 					SetStockStatus(mds[i].Idx, STATUS_ERROR, "Standby")
 				}
@@ -163,10 +163,10 @@ func process(mds []Stock, ch chan int) {
 					},
 				},
 			}
-			Logger.Println(series)
 			err = c.WriteSeries([]*client.Series{series})
 			if err != nil {
 				Logger.Println(err)
+				Logger.Println(series)
 				SetStockStatus(idx, STATUS_ERROR, "ERROR writing to db...\n"+err.Error())
 			} else {
 				recCount[idx]++

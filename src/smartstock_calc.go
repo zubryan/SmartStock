@@ -124,6 +124,8 @@ var (
 )
 
 var Ref []Refdata
+var c = GetNewDbClient()
+var TradeTimeWindows []string = []string{"09:30", "11:30", "13:00", "15:00"}
 
 func isHitCriteria(m *Metrics, criteria string) bool {
 	result := true
@@ -280,6 +282,7 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	ref.cpsum9 = *New(0)
 	ref.cpsum19 = *New(0)
 	sum := *New(0)
+loopprc:
 	for i, val := range ref.closePriceSeq {
 		sum.Add(&sum, &val)
 		switch i + 1 {
@@ -289,7 +292,7 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 			ref.cpsum9 = sum
 		case 19:
 			ref.cpsum19 = sum
-			break
+			break loopprc
 		default:
 		}
 	}
@@ -304,14 +307,18 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	}
 
 	sum = *New(0)
+loopval:
 	for i, val := range ref.volSeq {
+		// if val.Float64() == 0 {
+		// 	return ref, errors.New(fmt.Sprintf("invalid volume %d:%s, maybe suspended", i, val.String()))
+		// }
 		sum.Add(&sum, &val)
 		switch i + 1 {
 		case 5:
 			ref.volsum5 = sum
 		case 10:
 			ref.volsum10 = sum
-			break
+			break loopval
 		default:
 		}
 	}
@@ -434,8 +441,6 @@ func getRefdataDataAPI(ticker string, Idx int, date string) (MktEqudRefslice, er
 	}
 	return refdata, nil
 }
-
-var c = GetNewDbClient()
 
 func loadRefData(mds []Stock, ch chan int) {
 	// c := GetNewDbClient()
@@ -633,8 +638,8 @@ func HaveAlerts(Idx int, criteriasstring string) bool {
 	// X3       Dec    // "X3", abs(MACD)
 	// X4       Dec    // "X4", tradableQty * Prc
 	TotalMinute := TotalMinute()
-	ok := true
-	f, ok := points[0][idxtime].(float64)
+	f, ok := 0.0, true
+	f, ok = points[0][idxtime].(float64)
 	if !ok {
 		Logger.Panic("No lasttime")
 	}
@@ -651,9 +656,9 @@ loopMktdata:
 		lstprice, _ = p[idxlastPrice].(float64)
 		prcChg, _ = p[idxPriceChgPct].(float64)
 		volDec.SetFloat64(volume)
-		MinuteFromOpen := getMinuteFromOpen(pRef.dataTime)
-		(*m).X1_1 = calcX1_1(&volDec, &pRef.volsum5, &MinuteFromOpen, &TotalMinute)
-		(*m).X1_2 = calcX1_2(&volDec, &pRef.volsum10, &MinuteFromOpen, &TotalMinute)
+		//MinuteFromOpen := getMinuteFromOpen(pRef.dataTime)
+		(*m).X1_1 = calcX1_1(&volDec, &pRef.volsum5, &TotalMinute, &TotalMinute)
+		(*m).X1_2 = calcX1_2(&volDec, &pRef.volsum10, &TotalMinute, &TotalMinute)
 
 		(*m).X2.SetFloat64(prcChg)
 
@@ -688,7 +693,11 @@ loopMktdata:
 			}
 		}
 	}
-	// pRef.lasttime =
+	f, ok = points[len(points)-1][idxtime].(float64)
+	if !ok {
+		Logger.Panic("No lasttime")
+	}
+	pRef.lasttime = int64(f) * 1e6
 	return haveAlerts
 }
 
@@ -740,8 +749,6 @@ func calcX3(lstprc, prevEMAS, prevEMAL, prevDEA *Dec) Dec {
 	Macd.Sub(&Dif, &Dea)
 	return *new(Dec).Abs(new(Dec).Mul(&Macd, New(2)).Round(7))
 }
-
-var TradeTimeWindows []string = []string{"09:30", "11:30", "13:00", "15:00"}
 
 func TotalMinute() Dec {
 	var v int64
