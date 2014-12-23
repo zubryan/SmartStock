@@ -282,6 +282,7 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	ref.cpsum9 = *New(0)
 	ref.cpsum19 = *New(0)
 	sum := *New(0)
+loopprc:
 	for i, val := range ref.closePriceSeq {
 		sum.Add(&sum, &val)
 		switch i + 1 {
@@ -291,7 +292,7 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 			ref.cpsum9 = sum
 		case 19:
 			ref.cpsum19 = sum
-			break
+			break loopprc
 		default:
 		}
 	}
@@ -306,17 +307,18 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 	}
 
 	sum = *New(0)
+loopval:
 	for i, val := range ref.volSeq {
-		if val.Float64() == 0 {
-			return ref, errors.New("invalid volume, maybe suspended")
-		}
+		// if val.Float64() == 0 {
+		// 	return ref, errors.New(fmt.Sprintf("invalid volume %d:%s, maybe suspended", i, val.String()))
+		// }
 		sum.Add(&sum, &val)
 		switch i + 1 {
 		case 5:
 			ref.volsum5 = sum
 		case 10:
 			ref.volsum10 = sum
-			break
+			break loopval
 		default:
 		}
 	}

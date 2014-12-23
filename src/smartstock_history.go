@@ -36,15 +36,15 @@ type MktdataDaily struct {
 	time            int64  // datetime.UnixNano()   / 1e6,
 	ticker_exchange string // ticker_exchange,      // "ticker.exchange",
 	dataDate        string // Mktdata[j].TradeDate, // "dataDate",
-	openPrice       Dec    // openPrice,            // "openPrice",
-	closePrice      Dec    // closePrice,           // "closePrice",
-	preClosePrice   Dec    // preClosePrice,        // "preClosePrice",
-	highestPrice    Dec    // highestPrice,         // "highestPrice",
-	lowestPrice     Dec    // lowestPrice,          // "lowestPrice",
-	priceChange     Dec    // priceChange,          // "price_change",
-	priceChangePct  Dec    // priceChangePct,       // "price_change_percentage",
-	volume          Dec    // turnoverVol,          // "volume",
-	ammount         Dec    // turnoverValue,        // "ammount"
+	//openPrice       Dec    // openPrice,            // "openPrice",
+	closePrice Dec // closePrice,           // "closePrice",
+	//preClosePrice   Dec    // preClosePrice,        // "preClosePrice",
+	//highestPrice    Dec    // highestPrice,         // "highestPrice",
+	//lowestPrice     Dec    // lowestPrice,          // "lowestPrice",
+	//priceChange     Dec    // priceChange,          // "price_change",
+	//priceChangePct  Dec    // priceChangePct,       // "price_change_percentage",
+	volume Dec // turnoverVol,          // "volume",
+	//ammount         Dec    // turnoverValue,        // "ammount"
 }
 
 type Macd struct {
@@ -127,21 +127,21 @@ func getHistData(sec Stock) (MktEqudslice, error) {
 			Logger.Panic(err)
 		}
 		json.Unmarshal(body, &histock)
-		Logger.Print("HISTOCK")
-		Logger.Println(histock)
+		//Logger.Print("HISTOCK")
+		//Logger.Println(histock)
 
-		if api == "getMktHKEqud.json" {
-			// Reverse the data sequence ... HKEqud is special~~!!!
-			var tmp MktEqud
-			i, j := 0, len(histock.Data)-1
-			for i < j {
-				tmp = histock.Data[i]
-				histock.Data[i] = histock.Data[j]
-				histock.Data[j] = tmp
-				i += 1
-				j -= 1
-			}
-		}
+		// if api == "getMktHKEqud.json" {
+		// 	// Reverse the data sequence ... HKEqud is special~~!!!
+		// 	var tmp MktEqud
+		// 	i, j := 0, len(histock.Data)-1
+		// 	for i < j {
+		// 		tmp = histock.Data[i]
+		// 		histock.Data[i] = histock.Data[j]
+		// 		histock.Data[j] = tmp
+		// 		i += 1
+		// 		j -= 1
+		// 	}
+		// }
 
 		switch histock.RetCode {
 		case -1:
@@ -240,10 +240,11 @@ func parseMktData(MktdataDailySeq []MktdataDaily, Mktdata []MktEqud, ticker_exch
 	}
 }
 
-func correctMktData(beforeCorr []MktdataDaily, afterCorr []MktdataDaily,
+func correctMktData(beforeCorr []MktdataDaily, afterCorrOut *[]MktdataDaily,
 	Mktdata []MktEqud) {
 	ticker_exchange := beforeCorr[0].ticker_exchange
 	factors := make([]Dec, len(Mktdata))
+	afterCorr := make([]MktdataDaily, len(Mktdata))
 	for i, _ := range factors {
 		factors[i].SetInt64(1)
 	}
@@ -271,7 +272,15 @@ func correctMktData(beforeCorr []MktdataDaily, afterCorr []MktdataDaily,
 
 			datetime, _ := time.Parse("2006-01-02 15:04:05 MST -0700",
 				Mktdata[j].TradeDate+" 15:00:00 GMT +0800")
-			preClosePrice.SetFloat64(Mktdata[j].PreClosePrice)
+			if Mktdata[j].PreClosePrice == 0 { // HK...
+				if j < len(Mktdata)-1 {
+					preClosePrice.SetFloat64(Mktdata[j+1].ClosePrice)
+				} else {
+					preClosePrice.SetFloat64(Mktdata[j].ClosePrice)
+				}
+			} else {
+				preClosePrice.SetFloat64(Mktdata[j].PreClosePrice)
+			}
 			afterCorr[j].time = datetime.UnixNano() / 1e6
 			afterCorr[j].ticker_exchange = ticker_exchange // "ticker.exchange",
 			afterCorr[j].dataDate = Mktdata[j].TradeDate   // "dataDate",
@@ -303,6 +312,12 @@ func correctMktData(beforeCorr []MktdataDaily, afterCorr []MktdataDaily,
 		//	afterCorr[j].priceChange.Sub(&closePrice, &preClosePrice)
 		//afterCorr[j].priceChangePct = CalcPercentage(afterCorr[j].priceChange, preClosePrice, DECIMAL_PCT+2)
 	}
+	for j := range afterCorr {
+		if Mktdata[j].OpenPrice == 0 {
+			continue
+		}
+		*afterCorrOut = append(*afterCorrOut, afterCorr[j])
+	}
 }
 func loadHistdata(mds []Stock, ch chan int) {
 	c := GetNewDbClient()
@@ -318,14 +333,18 @@ func loadHistdata(mds []Stock, ch chan int) {
 		}
 		days := len(mktdataDaily.Data)
 		if days > 0 {
+			var MktdataDailySeq_corrected []MktdataDaily
 			MktdataDailySeq := make([]MktdataDaily, days)
-			MktdataDailySeq_corrected := make([]MktdataDaily, days)
-			MacdSeq := make([]Macd, days)
+			//MktdataDailySeq_corrected := make([]MktdataDaily, days)
 			parseMktData(MktdataDailySeq, mktdataDaily.Data, mds[i].Ticker_exchange)
-			correctMktData(MktdataDailySeq, MktdataDailySeq_corrected, mktdataDaily.Data)
+			correctMktData(MktdataDailySeq, &MktdataDailySeq_corrected, mktdataDaily.Data)
+
+			Logger.Println(MktdataDailySeq_corrected)
+			MacdSeq := make([]Macd, len(MktdataDailySeq_corrected))
 			calcMACD(MktdataDailySeq_corrected, MacdSeq)
+			Logger.Println(MacdSeq)
 			// only write last 30 days
-			if len(MktdataDailySeq) > 30 {
+			if len(MktdataDailySeq_corrected) > 30 {
 				//PutSeries(c, name_mktdata, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq[len(MktdataDailySeq)-30:len(MktdataDailySeq)]))
 				PutSeries(c, name_corrected, columns_mktdata_daily[:], MktdataDaily2Pnts(MktdataDailySeq_corrected[len(MktdataDailySeq_corrected)-30:len(MktdataDailySeq_corrected)]))
 			} else {
