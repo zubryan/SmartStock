@@ -307,6 +307,9 @@ func getRefdataDB(ticker string, Idx int) (Refdata, error) {
 
 	sum = *New(0)
 	for i, val := range ref.volSeq {
+		if val.Float64() == 0 {
+			return ref, errors.New("invalid volume, maybe suspended")
+		}
 		sum.Add(&sum, &val)
 		switch i + 1 {
 		case 5:
