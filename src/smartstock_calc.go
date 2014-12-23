@@ -638,8 +638,8 @@ func HaveAlerts(Idx int, criteriasstring string) bool {
 	// X3       Dec    // "X3", abs(MACD)
 	// X4       Dec    // "X4", tradableQty * Prc
 	TotalMinute := TotalMinute()
-	ok := true
-	f, ok := points[0][idxtime].(float64)
+	f, ok := 0.0, true
+	f, ok = points[0][idxtime].(float64)
 	if !ok {
 		Logger.Panic("No lasttime")
 	}
@@ -693,7 +693,11 @@ loopMktdata:
 			}
 		}
 	}
-	// pRef.lasttime =
+	f, ok = points[len(points)-1][idxtime].(float64)
+	if !ok {
+		Logger.Panic("No lasttime")
+	}
+	pRef.lasttime = int64(f) * 1e6
 	return haveAlerts
 }
 
