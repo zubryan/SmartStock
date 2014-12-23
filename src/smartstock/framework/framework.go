@@ -226,7 +226,11 @@ func initDB() {
 
 func CallDataAPI(api_catagory string, version string, api string, parameters []string) ([]byte, error) {
 
-	var url = APICONF["url"] + "/" + api_catagory + "/" + version + "/" + api + "?" + strings.Join(parameters, "&")
+	var url = APICONF["url"] + "/" + api_catagory + "/"
+	if len(version) > 0 {
+		url += version + "/"
+	}
+	url += api + "?" + strings.Join(parameters, "&")
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		loggerFW.Panic(err)
@@ -244,7 +248,7 @@ func CallDataAPI(api_catagory string, version string, api string, parameters []s
 			continue
 		}
 		if resp != nil && resp.StatusCode == 200 {
-			loggerFW.Println("Calling API succeed %s", url)
+			//loggerFW.Println("Calling API succeed %s", url)
 			//loggerFW.Println(resp.Header)
 			body, _ := ioutil.ReadAll(resp.Body)
 			resp.Body.Close()
